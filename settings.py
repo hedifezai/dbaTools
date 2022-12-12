@@ -31,7 +31,7 @@ apiItems = {
             'host'      :   'https://wft-geo-db.p.rapidapi.com/v1/geo',
             'username'  :   'fezai.5',
             'password'  :   'cURHTjYtS3RqSkEtMm1pRUEtZmdrSnEtUnNUeko=',
-            'headers'   :   {"X-RapidAPI-Key": "6ab450c5a6mshe8613c8aaf52770p116e78jsn0dffba050d63","X-RapidAPI-Host": "wft-geo-db.p.rapidapi.com"},
+            'headers'   :   {"X-RapidAPI-Key": "**********************","X-RapidAPI-Host": "wft-geo-db.p.rapidapi.com"},
             'endpoints' :   ['/countries', '/cities'],
             'status'    :   0                       # 1 = Enabled  0 = Disabled
 }
