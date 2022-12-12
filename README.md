@@ -10,4 +10,4 @@ We can look for only files matching a certain mask in their names at a remote fo
 After loading the files into an SQL table, the script launches a Stored Procedure (usually to merge new records into a bigger table)
 The logging part is well implemented (formatted text files and/or Email in HTML Format with recepients supporting Python Lists)
 All the needed configuration variables are gathered in a separte file
-Inside the script some parts swith automatically depending whether the script is on local testing machine  or deployed to a prduction server.
+Inside the script some parts swith automatically depending whether the script is on local testing machine  or deployed to a production server.
