@@ -48,7 +48,7 @@ TsfItems = {
             'lookUpDay'             :   -1,                 # Décalage en jours par rapport à aujourd'hui pour le calcul des masque de fichiers
             'lookForZip'            :   True,               # Télecharge les Zips qui correspondent au zipMask et vérifie dedans la présence de fichiers avec fileMask
             'zipMask'               :   '*.zip',            # Masque pour les fichiers zip trouvés sur RemoteFolder
-            'encoding'              :   'windows-1252',     # File Encoding
+            'encoding'              :   'windows-1252',     # File Encoding 'windows-1252', 'utf-8',...
             'separator'             :   ';',                # Field Separator
             'quotechar'             :   None,               # Délimiteur de champs
             'forceAlltoNVARCHAR'    :   True,               # Forcer tous les champs à NVARCHAR(255) lors de la création des tables et de l'injection des données (evite les problèmes de conversion)
@@ -93,7 +93,7 @@ MailItems = {
             'smtp_server'   :   'smtp.server.com',              # Servur SMTP
             'port'          :   465,                            # Port SMTP
             'sender_email'  :   'email@gmail.com',              # Emetteur
-            'receiver_email':   'email@gmail.com',              # Destinataire du mail
+            'receiver_email':   ['email@gmail.com'],            # Destinataire du mail
             'login_email'   :   'email@gmail.com',              # Login SMTP
             'password'      :   '*************',                # Mot de Passe SMTP
             'level'         :   'info',    #info/error          # info : mails envoyés après chaque exécution, erreur : mails envoyés en cas d'erreur (l'objet sera modifié en si présence d'erreur)
