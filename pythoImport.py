@@ -751,7 +751,7 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
         m['To'] = " ,".join(receiver_email)
         try:
             context = ssl.create_default_context()
-            if environ["COMPUTERNAME"] == 'FRPARDMT01':
+            if environ["COMPUTERNAME"] == 'SERVERNAME': # Put HostName is server needs StartTLS
                 with smtplib.SMTP(smtp_server, port) as server:
                     server.ehlo()
                     server.starttls(context=context)
