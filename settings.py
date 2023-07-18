@@ -29,9 +29,9 @@ owncldItems = {
 # Pas encore implémentée !!!
 apiItems = {
             'host'      :   'https://wft-geo-db.p.rapidapi.com/v1/geo',
-            'username'  :   'fezai.5',
-            'password'  :   'cURHTjYtS3RqSkEtMm1pRUEtZmdrSnEtUnNUeko=',
-            'headers'   :   {"X-RapidAPI-Key": "**********************","X-RapidAPI-Host": "wft-geo-db.p.rapidapi.com"},
+            'username'  :   'user',
+            'password'  :   'c**************',
+            'headers'   :   {"X-RapidAPI-Key": "******","X-RapidAPI-Host": "wft-geo-db.p.rapidapi.com"},
             'endpoints' :   ['/countries', '/cities'],
             'status'    :   0                       # 1 = Enabled  0 = Disabled
 }
@@ -48,7 +48,7 @@ TsfItems = {
             'lookUpDay'             :   -1,                 # Décalage en jours par rapport à aujourd'hui pour le calcul des masque de fichiers
             'lookForZip'            :   True,               # Télecharge les Zips qui correspondent au zipMask et vérifie dedans la présence de fichiers avec fileMask
             'zipMask'               :   '*.zip',            # Masque pour les fichiers zip trouvés sur RemoteFolder
-            'encoding'              :   'windows-1252',     # File Encoding 'windows-1252', 'utf-8',...
+            'encoding'              :   'utf-8',     # File Encoding 'windows-1252', 'utf-8',...
             'separator'             :   ';',                # Field Separator
             'quotechar'             :   None,               # Délimiteur de champs
             'forceAlltoNVARCHAR'    :   True,               # Forcer tous les champs à NVARCHAR(255) lors de la création des tables et de l'injection des données (evite les problèmes de conversion)
@@ -65,6 +65,8 @@ columnNames ={
     7:'Téléphone',
     8:'Email'
 }
+skiprows = 0    #Nombre de lignes à ignorer au début du fichier
+skipfooter = 0  #Nombre de lignes à ignorer à la fin du fichier
 # Informations sur le logging des exécutions
 LogItems = {
             'logFolder'     :   LogFolder + '/Logs',
@@ -83,7 +85,7 @@ SqlItems = {
             'sqlStopStr'    :   '_2022',            # Chaine recherchée qui détermine la position de fin du split du nom de fichier
             'sqlTablePrefix':   'tTmpPythoImport_', # Préfixe pour les nom des tables crées par el split des noms de fichiers
             #Fixed
-            'sqlTable'      :   ['tTmpPythoImport_PythonE'], # Nom de la table SQL de destination si sqlMode = fixed
+            'sqlTable'      :   ['tTmpPythoImport_Python'], # Nom de la table SQL de destination si sqlMode = fixed
             'importMode'    :   'truncate',          # append/truncate/replace
             'spExec'        :   ['pPythoImportLogFiles'], # Nom de la procédure SQL à lancer après l'import des données dans la table. Préfixez avec "--" pour désactiver
             'status'        :   1

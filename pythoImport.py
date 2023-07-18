@@ -1,9 +1,9 @@
 """
 =============================================================================
-Project Name        : PythoImport Version 4.0
+Project Name        : PythoImport Version 4.1
 Created by          : Hedi FEZAI
 Date Creation       : 10/11/2022
-Date Modification   : 08/12/2022
+Date Modification   : 05/07/2023
 -----------------------------------------------------------------------------
 Changelog :
 
@@ -41,6 +41,9 @@ V4.0 (2022-12-08)
     v   Ignore Error if Truncate doesn't find the table. Table will be created
     v   Added multiMask multiTable multiSP for the same Import
     v   Bug Fixes and Improved Visuals
+V4.1 (2023-07-05)
+    v ignore Mail if no file has been processed (download or import)
+    v corrected a bug with filehandle not closing in time
 
  WishList
     ToDo :
@@ -65,8 +68,22 @@ from email.mime.multipart import MIMEMultipart
 import zipfile
 import owncloud
 import pyodbc
-from settings import *
 
+# Setting some Local Test Variables
+if environ["COMPUTERNAME"] == 'TNTUKLFT8SDB3':
+    from testSettings_FREE import *
+    LogItems['logFolder']   = 'D:/Data'
+    sftpItems['host']       = '217.69.19.65'
+    sftpItems['port']       = 22
+    sftpItems['username']   = 'frparsftpLeadsCollector.1'
+    sftpItems['password']   = 'REVWISFsMHBtZW50XzIwMTQ='
+    #TsfItems['remoteFolder']= '/DEVDBA/TESTDBA' #D:/Data/Clients/LouvreHotel/Genesys_PythoImport'   #'/DEVDBA/TESTDBA'
+    SqlItems['sqlServer']   = 'localhost'
+    SqlItems['sqlPort']     = 0
+    MailItems               = MailItemsLocal
+else:
+    from settings import *
+    MailItems= MailItemsDMT
 
 # Let's Go
 
@@ -115,6 +132,7 @@ def sqlcol(dfparam):
 loglist = []
 hasErrorGlobal = False
 hasError = False
+hasAction = False
 sftpStatus=sftpItems.pop('status')
 logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + ' ' +'|' +  '\t' + '########################################## BEGIN CYCLE ##########################################' + '\n')
 if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExec']):
@@ -243,6 +261,7 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
                         loglist.append (datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp;' +'Current    mask : ' + listComputedMask[index] + '\t' + 'Files Found : ' + str(len(cleanlist)))
                         for file in cleanlist:
                             try:
+                                hasAction = True
                                 fileName = datetime.now().strftime("%Y%m%d_%H%M%S") + '_' + file
                                 logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + ' ' +'|' +  '\t\t' + 'Downloading ' + file + ' as '+ fileName + '\n')
                                 loglist.append (datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp;' + 'Downloading ' + file + ' as '+ fileName)
@@ -364,6 +383,7 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
                         loglist.append (datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp;' +'Current    mask : ' + listComputedMask[index] + '\t' + 'Files Found : ' + str(len(cleanlist)))
                         for file in cleanlist:
                             try:
+                                hasAction = True
                                 fileName = datetime.now().strftime("%Y%m%d_%H%M%S") + '_' + file
                                 logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + ' ' +'|' +  '\t\t' + 'Downloading ' + file + ' as '+ fileName + '\n')
                                 loglist.append (datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp;' + 'Downloading ' + file + ' as '+ fileName)
@@ -471,6 +491,7 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
                 loglist.append (datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp;' +'Current    mask : ' + listComputedMask[index] + '\t' + 'Files Found : ' + str(len(cleanlist)))
                 for file in cleanlist:
                     try:
+                        hasAction = True
                         fileName = datetime.now().strftime("%Y%m%d_%H%M%S") + '_' + file
                         logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + ' ' +'|' +  '\t\t' + 'Downloading ' + file + ' as '+ fileName + '\n')
                         loglist.append (datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp;' + 'Downloading ' + file + ' as '+ fileName)
@@ -506,6 +527,7 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
         for index in range (len(listComputedMask)):
             cleanlistAll += [file for file in listfiles if fnmatch.fnmatch(file, '*' + listComputedMask[index])]
         if len(cleanlistAll)!=0:
+            hasAction = True
             logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + ' ' +'|' +  '\t' + 'BEGIN Import\n')
             loglist.append (datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '' + 'BEGIN Import')
             try:
@@ -537,9 +559,11 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
                             file_name, file_extension = path.splitext(file)
                             if file_extension in ['.csv', '.txt', '.ows']:
                                 if TsfItems['useFileColumns'] == True:
-                                    df = pd.read_csv(filepath, quotechar=TsfItems['quotechar'], encoding=TsfItems['encoding'], delimiter=TsfItems['separator'])
+                                    with open(filepath, errors='replace',encoding=TsfItems['encoding']) as filehandle:
+                                        df = pd.read_csv(filehandle, quotechar=TsfItems['quotechar'], encoding=TsfItems['encoding'], delimiter=TsfItems['separator'],engine = 'python', dtype = 'str')
                                 else:
-                                    df = pd.read_csv(filepath, quotechar=TsfItems['quotechar'], encoding=TsfItems['encoding'], delimiter=TsfItems['separator'], skiprows = 1, header = None, names= columnNames.values(),usecols=columnNames.keys())
+                                    with open(filepath, errors='replace',encoding=TsfItems['encoding']) as filehandle:
+                                        df = pd.read_csv(filehandle, quotechar=TsfItems['quotechar'], encoding=TsfItems['encoding'], delimiter=TsfItems['separator'], skiprows = skiprows, skipfooter = skipfooter, header = None, names= columnNames.values(), usecols=columnNames.keys(), engine = 'python' , dtype = 'str')
                             elif file_extension in ['.xls', '.xlsx', '.xlsm','.xlsb']:
                                 if TsfItems['useFileColumns'] == True:
                                     df = pd.read_excel(filepath)
@@ -694,7 +718,7 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
     if hasErrorGlobal == False:
         hasErrorGlobal = hasError
     # Bloc mail
-    if MailItems['status'] == 0:
+    if MailItems['status'] == 0 or hasAction == False:
         sendMail = False
     else:
         if MailItems['level'] == 'info':
@@ -751,7 +775,7 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
         m['To'] = " ,".join(receiver_email)
         try:
             context = ssl.create_default_context()
-            if environ["COMPUTERNAME"] == 'SERVERNAME': # Put HostName is server needs StartTLS
+            if environ["COMPUTERNAME"] == 'FRPARDMT01':
                 with smtplib.SMTP(smtp_server, port) as server:
                     server.ehlo()
                     server.starttls(context=context)
