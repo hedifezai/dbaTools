@@ -1,6 +1,6 @@
 """
 =============================================================================
-Project Name        : PythoImport Version 4.1
+Project Name        : PythoImport Version 4.2
 Created by          : Hedi FEZAI
 Date Creation       : 10/11/2022
 Date Modification   : 05/07/2023
@@ -44,7 +44,8 @@ V4.0 (2022-12-08)
 V4.1 (2023-07-05)
     v ignore Mail if no file has been processed (download or import)
     v corrected a bug with filehandle not closing in time
-
+V4.2 (2023-07-18)
+    v Ignoring quotechar = None
  WishList
     ToDo :
     ?   Add Support for TarBalls (tar, tar.gz, tgz)
@@ -66,24 +67,11 @@ import smtplib, ssl
 from email.mime.text import MIMEText as text
 from email.mime.multipart import MIMEMultipart
 import zipfile
-import owncloud
+#import owncloud
 import pyodbc
 
-# Setting some Local Test Variables
-if environ["COMPUTERNAME"] == 'TNTUKLFT8SDB3':
-    from testSettings_FREE import *
-    LogItems['logFolder']   = 'D:/Data'
-    sftpItems['host']       = '217.69.19.65'
-    sftpItems['port']       = 22
-    sftpItems['username']   = 'frparsftpLeadsCollector.1'
-    sftpItems['password']   = 'REVWISFsMHBtZW50XzIwMTQ='
-    #TsfItems['remoteFolder']= '/DEVDBA/TESTDBA' #D:/Data/Clients/LouvreHotel/Genesys_PythoImport'   #'/DEVDBA/TESTDBA'
-    SqlItems['sqlServer']   = 'localhost'
-    SqlItems['sqlPort']     = 0
-    MailItems               = MailItemsLocal
-else:
-    from settings import *
-    MailItems= MailItemsDMT
+from settings import *
+
 
 # Let's Go
 
@@ -560,10 +548,17 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
                             if file_extension in ['.csv', '.txt', '.ows']:
                                 if TsfItems['useFileColumns'] == True:
                                     with open(filepath, errors='replace',encoding=TsfItems['encoding']) as filehandle:
-                                        df = pd.read_csv(filehandle, quotechar=TsfItems['quotechar'], encoding=TsfItems['encoding'], delimiter=TsfItems['separator'],engine = 'python', dtype = 'str')
+                                        if TsfItems['quotechar'] == None:
+                                            df = pd.read_csv(filehandle, encoding=TsfItems['encoding'], delimiter=TsfItems['separator'],engine = 'python', dtype = 'str')
+                                        else:
+                                            df = pd.read_csv(filehandle, quotechar=TsfItems['quotechar'], encoding=TsfItems['encoding'], delimiter=TsfItems['separator'],engine = 'python', dtype = 'str')
                                 else:
                                     with open(filepath, errors='replace',encoding=TsfItems['encoding']) as filehandle:
-                                        df = pd.read_csv(filehandle, quotechar=TsfItems['quotechar'], encoding=TsfItems['encoding'], delimiter=TsfItems['separator'], skiprows = skiprows, skipfooter = skipfooter, header = None, names= columnNames.values(), usecols=columnNames.keys(), engine = 'python' , dtype = 'str')
+                                        if TsfItems['quotechar'] == None:
+                                            df = pd.read_csv(filehandle, encoding=TsfItems['encoding'], delimiter=TsfItems['separator'], skiprows = skiprows, skipfooter = skipfooter, header = None, names= columnNames.values(), usecols=columnNames.keys(), engine = 'python' , dtype = 'str')
+                                        else:
+                                            df = pd.read_csv(filehandle, quotechar=TsfItems['quotechar'], encoding=TsfItems['encoding'], delimiter=TsfItems['separator'], skiprows = skiprows, skipfooter = skipfooter, header = None, names= columnNames.values(), usecols=columnNames.keys(), engine = 'python' , dtype = 'str')
+
                             elif file_extension in ['.xls', '.xlsx', '.xlsm','.xlsb']:
                                 if TsfItems['useFileColumns'] == True:
                                     df = pd.read_excel(filepath)
