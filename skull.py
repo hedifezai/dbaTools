@@ -35,10 +35,8 @@ def initLogFile():
 
 def logToFile (log_file, level = 1, isError = False, message = ''):
     # fonction qui gère l'écriture dans les fichiers logs. Level : gère l'indentation dans les logs pour plus de lisibilité
-    fileSep = '\t'
-    htmlSep = ''
-    fileSep = (level-1) * '\t'
-    htmlSep = (level-1) * '&emsp;'
+    fileSep = level * '\t'
+    htmlSep = level * '&emsp;'
     with open(log_file,'a',encoding = 'utf-8') as f:
         if isError:
             f.write  (datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ' |E|' +  fileSep + message + '\n')
