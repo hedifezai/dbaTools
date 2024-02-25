@@ -632,6 +632,7 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
                                                 except Exception as moveToError:
                                                     logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + 'E' +'|' +  '\t\t' +  "Error moving file to InError : " + file + '. Error Text :' + str(moveToError) + '\n')
                                                     loglist.append ('<font color="red">' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp;' +  "Error moving file to InError : " + file + '. Error Text :' + str(moveToError)+'</font>')
+                                                    hasError = True
                                             else:
                                                 logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + ' ' +'|' +  '\t\t\t' + "Return Value = " + str(spResult) + '\n')
                                                 loglist.append (datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp; &emsp;' + "Return Value = " + str(spResult))
@@ -650,6 +651,7 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
                                                     except Exception as moveToError:
                                                         logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + 'E' +'|' +  '\t\t' +  "Error moving file to InError : " + file + '. Error Text :' + str(moveToError) + '\n')
                                                         loglist.append ('<font color="red">' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp;' +  "Error moving file to InError : " + file + '. Error Text :' + str(moveToError)+'</font>')
+                                                        hasError = True
                                         except Exception as exsp:
                                             logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + 'E' +'|' +  '\t\t\t' +  "An Error occured. Error Text :" + str(exsp) + '\n')
                                             loglist.append ('<font color="red">' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp; &emsp;' +  "An Error occured. Error Text :" + str(exsp) +'</font>')
@@ -661,6 +663,7 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
                                             except Exception as moveToError:
                                                 logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + 'E' +'|' +  '\t\t' +  "Error moving file to InError : " + file + '. Error Text :' + str(moveToError) + '\n')
                                                 loglist.append ('<font color="red">' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp;' +  "Error moving file to InError : " + file + '. Error Text :' + str(moveToError)+'</font>')
+                                                hasError = True
                                         finally:
                                             cursor = None
                                     else:
@@ -680,9 +683,11 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
                                     except Exception as moveToError:
                                         logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + 'E' +'|' +  '\t\t' +  "Error moving file to InError : " + file + '. Error Text :' + str(moveToError) + '\n')
                                         loglist.append ('<font color="red">' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp;' +  "Error moving file to InError : " + file + '. Error Text :' + str(moveToError)+'</font>')
+                                        hasError = True
                             except Exception as err:
                                 logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + 'E' +'|' +  '\t\t' +  "Failed to import : " + file + '. Error Text :' + str(err) + '\n')
                                 loglist.append ('<font color="red">' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp;' +  "Failed to import : " + file + '. Error Text :' + str(err)+'</font>')
+                                hasError = True
                                 try:
                                     shutil.move(filepath,errpath)
                                     logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + 'E' +'|' +  '\t\t' +  "File : " + file + ' moved to '+ TsfItems['errorFolder'] + '\n')
@@ -703,6 +708,7 @@ if len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExe
                             except Exception as moveToError:
                                 logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + 'E' +'|' +  '\t\t' +  "Error moving file to InError : " + file + '. Error Text :' + str(moveToError) + '\n')
                                 loglist.append ('<font color="red">' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '&emsp;' +  "Error moving file to InError : " + file + '. Error Text :' + str(moveToError)+'</font>')
+                                hasError = True
                             if hasErrorGlobal == False:
                                 hasErrorGlobal = hasError
                 logfile (log_file, datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '|' + ' ' +'|' +  '\t' + 'END Import\n')
