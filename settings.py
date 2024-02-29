@@ -1,7 +1,10 @@
 #################################################################################################
 #                           Fichier de paramétrage PythoImport                                  #
 #################################################################################################
-
+from os import getenv
+from dotenv import load_dotenv
+from cryptography.fernet import Fernet
+load_dotenv('.env')
 # Informations sur l'automate d'import et les dossier à créer
 piItems = {
             'Provenance':    'Clients',
@@ -42,11 +45,16 @@ LogFolder  = 'D:/Test/' + piItems['Provenance'] +'/' + piItems['Client'] + '/' +
 # Information sur le process de transfert. Si SFTP et Owncloud sont désactivés, remoteFolfer est considéré comme source : emplacement réseau ou local
 # Tags disponibles pour les masques (File ou Zip): §yyyy§ §MM§ §dd§ §W§ §hh§ §mm§ §ss§
 TsfItems = {
-            'remoteFolder'          :   '/',                # Emplacement Source distant SFTP, OC, Filer ou local
-            'fileMask'              :   ['*.csv'],          # Masque pour les fichiers trouvés sur Remote Folder et dans les Zip
+            'remoteFolder'          :   [
+                                            '/',
+                                         ],                # Emplacement Source distant SFTP, OC, Filer ou local
+            'fileMask'              :   [
+                                            '*.csv',
+                                         ],          # Masque pour les fichiers trouvés sur Remote Folder et dans les Zip
             'useFileColumns'        :   True,               # Si False, il faut renseigner la variable columnNames suivante avec les numéros de colonnes à récupérer et leurs nouveaux noms
             'lookUpDay'             :   -1,                 # Décalage en jours par rapport à aujourd'hui pour le calcul des masque de fichiers
             'lookForZip'            :   True,               # Télecharge les Zips qui correspondent au zipMask et vérifie dedans la présence de fichiers avec fileMask
+            'recursiveMode'         :   False,              # Mode de recherche recursif en SFTP
             'zipMask'               :   '*.zip',            # Masque pour les fichiers zip trouvés sur RemoteFolder
             'encoding'              :   'utf-8',     # File Encoding 'windows-1252', 'utf-8',...
             'separator'             :   ';',                # Field Separator
@@ -65,13 +73,18 @@ columnNames ={
     7:'Téléphone',
     8:'Email'
 }
-skiprows = 0    #Nombre de lignes à ignorer au début du fichier
-skipfooter = 0  #Nombre de lignes à ignorer à la fin du fichier
+skiprows    = 0                 # Nombre de lignes à ignorer au début du fichier
+skipfooter  = 0                 # Nombre de lignes à ignorer à la fin du fichier
+addParent   = False             # Nomme les colonnes Json en parent.child sinon child tout court
+addJsonText = True              # Ajoute le texte Brut Json en colonne à lafin de la table
+dropNACol   = ""     			# Supprime les lignes où cette colonne est vide
+
 # Informations sur le logging des exécutions
 LogItems = {
             'logFolder'     :   LogFolder + '/Logs',
-            'filePrefix'    :   'PythoImport',      # Préfixe pour les fichiers Logs
-            'MaxFileSizeKB' :   512                 # Taille limite souhaitée d'un fichier log
+            'filePrefix'    :   'PythoImport',       	# Préfixe pour les fichiers Logs
+            'MaxFileSizeKB' :   512,                 	# Taille limite souhaitée d'un fichier log
+            'retentionDays' :   30						# Nombre de jours à garder
 }
 # Informations sur la connexion SQL, mettre status = 0 pour igoner ce bloc si inutie
 SqlItems = {
@@ -85,25 +98,29 @@ SqlItems = {
             'sqlStopStr'    :   '_2022',            # Chaine recherchée qui détermine la position de fin du split du nom de fichier
             'sqlTablePrefix':   'tTmpPythoImport_', # Préfixe pour les nom des tables crées par el split des noms de fichiers
             #Fixed
-            'sqlTable'      :   ['tTmpPythoImport_Python'], # Nom de la table SQL de destination si sqlMode = fixed
+            'sqlTable'      :   [
+                                    'tTmpPythoImport_Python',
+                                ], # Nom de la table SQL de destination si sqlMode = fixed
             'importMode'    :   'truncate',          # append/truncate/replace
-            'spExec'        :   ['pPythoImportLogFiles'], # Nom de la procédure SQL à lancer après l'import des données dans la table. Préfixez avec "--" pour désactiver
+            'spExec'        :   [
+                                    'pPythoImportLogFiles',
+                                 ], # Nom de la procédure SQL à lancer après l'import des données dans la table. Préfixez avec "--" pour désactiver
             'status'        :   1
 }
 # Informations sur l'envoi des rapports d'intégration par mail, mettre status = 0 pour igoner ce bloc si inutie
 MailItems = {
             'smtp_server'   :   'smtp.server.com',              # Servur SMTP
             'port'          :   465,                            # Port SMTP
+            'useTLS'        :   True,                           # TLS True or False
             'sender_email'  :   'email@gmail.com',              # Emetteur
             'receiver_email':   ['email@gmail.com'],            # Destinataire du mail
             'login_email'   :   'email@gmail.com',              # Login SMTP
             'password'      :   '*************',                # Mot de Passe SMTP
-            'level'         :   'info',    #info/error          # info : mails envoyés après chaque exécution, erreur : mails envoyés en cas d'erreur (l'objet sera modifié en si présence d'erreur)
-            'status'        :   0
+            'level'         :   'action', 	                    #info/action/error      # info : mails envoyés après chaque exécution, action : mail envoyé s'il y a eu une action d'import export, erreur : mails envoyés en cas d'erreur (l'objet sera modifié en si présence d'erreur)
+            'status'        :   1
 }
-# Bloc Cryptage Mot de Passe
-import base64
 
-password = "PutPasswordHereSaveRunCopyResultThenRemoveIt"
-password_bytes = base64.b64encode(password.encode('ascii')).decode('ascii')
+# Bloc Cryptage Mot de Passe
+password = b"PutPasswordHereSaveRunCopyResultThenRemoveIt"
+password_bytes = Fernet(getenv('FERNET_KEY')).encrypt(password)
 # print (password_bytes)  # Décommenter et exécuter ou lancer en ligne de commande avec python.exe settings.py pour récupérer le mot de passe crypté
