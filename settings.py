@@ -2,23 +2,24 @@
 #                           Fichier de paramétrage PythoImport                                  #
 #################################################################################################
 from os import getenv
-from dotenv import load_dotenv
 from cryptography.fernet import Fernet
-load_dotenv('.env')
+from dotenv import load_dotenv
+load_dotenv(r'pathToEnv\.env')
+
 # Informations sur l'automate d'import et les dossier à créer
 piItems = {
-            'Provenance':    'Clients',
+            'Provenance':    'Provenance',
             'Client'    :    'Client',
             'Campagne'  :    'Campagne',
-            'Sufixe'    :    '_EA'                  # Inutile, mais rajouté pour de la rétrocompatibilité avec AutoImport
+            'Sufixe'    :    ''                  # Inutile, mais rajouté pour de la rétrocompatibilité avec AutoImport
 }
 # Informations sur la connexion SFTP, mettre status = 0 pour igoner ce bloc si inutie
 sftpItems = {
-            'host'      :   'sftpServer',
-            'port'      :   22,
-            'username'  :   'user',
-            'password'  :   '*************',
-            'status'    :   0                       # 1 = Enabled  0 = Disabled
+            'host'      :   getenv('SFTP_HOST'),
+            'port'      :   int(getenv('SFTP_PORT')),
+            'username'  :   getenv('SFTP_USER'),
+            'password'  :   getenv('SFTP_PASSWORD'),
+            'status'    :   1                       # 1 = Enabled  0 = Disabled
 }
 # Informations sur la connexion OwnCloud, mettre status = 0 pour igoner ce bloc si inutie
 # Pour OwnCloud, il faut créer un "mot de passe d'application" à partir d'un compte AD (se fait en se connectant personnellement à OC)
@@ -40,82 +41,93 @@ apiItems = {
 }
 # Hormis remoteFolder, et le répertoire d'application, tous les autres dossiers seront automatiquement créés s'ils n'existent pas
 # NB : Les BackSlash "\" sont à remplacer par ForwardSlash "/" dans tous le chemins d'accès SFTP, OC, Filer ou même en local
-rootFolder = 'D:/Test/' + piItems['Provenance'] +'/' + piItems['Client'] + '/' + piItems['Campagne'] + '_PythoImport'
-LogFolder  = 'D:/Test/' + piItems['Provenance'] +'/' + piItems['Client'] + '/' + piItems['Campagne'] + '_PythoImport'
+rootFolder = 'D:/Data/' + piItems['Provenance'] +'/' + piItems['Client'] + '/' + piItems['Campagne'] + '_PythoImport'
+LogFolder  = 'D:/Logs/' + piItems['Provenance'] +'/' + piItems['Client'] + '/' + piItems['Campagne'] + '_PythoImport'
 # Information sur le process de transfert. Si SFTP et Owncloud sont désactivés, remoteFolfer est considéré comme source : emplacement réseau ou local
 # Tags disponibles pour les masques (File ou Zip): §yyyy§ §MM§ §dd§ §W§ §hh§ §mm§ §ss§
 TsfItems = {
             'remoteFolder'          :   [
-                                            '/',
-                                         ],                # Emplacement Source distant SFTP, OC, Filer ou local
+                                         '/DEVDBA/',
+                                        ],                # Emplacement Source distant SFTP, OC, Filer ou local
             'fileMask'              :   [
-                                            '*.csv',
-                                         ],          # Masque pour les fichiers trouvés sur Remote Folder et dans les Zip
+                                         '*.csv',
+                                        ],          # Masque pour les fichiers trouvés sur Remote Folder et dans les Zip
             'useFileColumns'        :   True,               # Si False, il faut renseigner la variable columnNames suivante avec les numéros de colonnes à récupérer et leurs nouveaux noms
             'lookUpDay'             :   -1,                 # Décalage en jours par rapport à aujourd'hui pour le calcul des masque de fichiers
-            'lookForZip'            :   True,               # Télecharge les Zips qui correspondent au zipMask et vérifie dedans la présence de fichiers avec fileMask
+            'lookForZip'            :   False,               # Télecharge les Zips qui correspondent au zipMask et vérifie dedans la présence de fichiers avec fileMask
             'recursiveMode'         :   False,              # Mode de recherche recursif en SFTP
             'zipMask'               :   '*.zip',            # Masque pour les fichiers zip trouvés sur RemoteFolder
             'encoding'              :   'utf-8',     # File Encoding 'windows-1252', 'utf-8',...
             'separator'             :   ';',                # Field Separator
+            'decimal'               :   '.',
             'quotechar'             :   None,               # Délimiteur de champs
             'forceAlltoNVARCHAR'    :   True,               # Forcer tous les champs à NVARCHAR(255) lors de la création des tables et de l'injection des données (evite les problèmes de conversion)
-            'nvarcharLength'        :   100,                # Taille du champs NVARCHAR
+            'nvarcharLength'        :   4000,                # Taille du champs NVARCHAR
             'localFolder'           :   rootFolder + '/ToProcess',  # Répertoire qui va accueillir les fichiers transférés en attente du traitement
             'archiveFolder'         :   rootFolder + '/Processed',  # Répertoire qui va accueillir les fichiers traités ou les zips téléchargés
             'errorFolder'           :   rootFolder + '/InError',    # Répertoire qui va accueillir les fichiers en erreur suite traitement
+            'addTimeStamp'          :   True,                       # Rajoute le timeStamp au nom fu fichier importé
             'deleteAfter'           :   False               # Supprime les fichiers distants après leur récupération
 }
-# Numéros de colonnes à récupérer du fichier source (commence à 1) avec les nouveaux nom à leur donner
+# Numéros de colonnes à récupérer du fichier source (commence à 0) avec les nouveaux nom à leur donner
 columnNames ={
     2:'Status',
     3:'Nom Prénom',
     7:'Téléphone',
     8:'Email'
 }
+
+# dtypes ={    'CLI reçu' : 'string'    }
+
 skiprows    = 0                 # Nombre de lignes à ignorer au début du fichier
 skipfooter  = 0                 # Nombre de lignes à ignorer à la fin du fichier
 addParent   = False             # Nomme les colonnes Json en parent.child sinon child tout court
 addJsonText = True              # Ajoute le texte Brut Json en colonne à lafin de la table
-dropNACol   = ""     			# Supprime les lignes où cette colonne est vide
+dropNACol   = ""     # Supprime les lignes où cette colonne est vide
 
 # Informations sur le logging des exécutions
 LogItems = {
             'logFolder'     :   LogFolder + '/Logs',
-            'filePrefix'    :   'PythoImport',       	# Préfixe pour les fichiers Logs
-            'MaxFileSizeKB' :   512,                 	# Taille limite souhaitée d'un fichier log
-            'retentionDays' :   30						# Nombre de jours à garder
+            'filePrefix'    :   'PythoImport',       # Préfixe pour les fichiers Logs
+            'MaxFileSizeKB' :   512,                 # Taille limite souhaitée d'un fichier log
+            'retentionDays' :   30
+
 }
 # Informations sur la connexion SQL, mettre status = 0 pour igoner ce bloc si inutie
 SqlItems = {
-            'sqlServer'     :   'localhost',        # Nom ou adresse IP du serveur SQL
-            'sqlPort'       :   0,                  # Mettre à 0 si on passe par les NamedPipes
-            'sqlDataBase'   :   'database',        # Base de données où les fichiers seront importés
-            'sqlSchema'     :   'dbo',              # Schéma de la table dans la BDD
-            'sqlTableMode'  :   'fixed',            # fixed / auto -- Fixed : Table créée au préalable/ auto : la table sera créée si elle n'existe pas
+            'sqlServer'     :   'FRPARSQLTEST01',   # Nom ou adresse IP du serveur SQL
+            'sqlPort'       :   1320,               # Mettre à 0 si on passe par les NamedPipes
+            'sqlDataBase'   :   'TEST_HFE',         # Base de données où les fichiers seront importés
+            'sqlSchema'     :   'imp',              # Schéma de la table dans la BDD
+            'sqlTableMode'  :   'auto',             # fixed / auto -- Fixed : Table créée au préalable/ auto : la table sera créée si elle n'existe pas
+            'autoAddColumns':   True,               # rajoute les colonnes manquantes à la table SQL automatiquement
             #auto :  les noms des tables seront extraits des noms des fichiers importés en se basant sur les éléments suivants
-            'sqlStartPos'   :   0,                  # Position de départ pour le Split du nom du fichier
-            'sqlStopStr'    :   '_2022',            # Chaine recherchée qui détermine la position de fin du split du nom de fichier
-            'sqlTablePrefix':   'tTmpPythoImport_', # Préfixe pour les nom des tables crées par el split des noms de fichiers
+            'sqlStartPos'   :   16,                  # Position de départ pour le Split du nom du fichier
+            'sqlStopStr'    :   '.',            # Chaine recherchée qui détermine la position de fin du split du nom de fichier
+            'sqlTablePrefix':   'tTmpHFE_', # Préfixe pour les nom des tables crées par el split des noms de fichiers
             #Fixed
             'sqlTable'      :   [
-                                    'tTmpPythoImport_Python',
-                                ], # Nom de la table SQL de destination si sqlMode = fixed
-            'importMode'    :   'truncate',          # append/truncate/replace
+                                 'tTmpPythoImportTEST54',
+                                ],                      # Nom de la table SQL de destination si sqlMode = fixed
+            'importMode'    :   'truncate',             # append/truncate/replace
             'spExec'        :   [
-                                    'pPythoImportLogFiles',
-                                 ], # Nom de la procédure SQL à lancer après l'import des données dans la table. Préfixez avec "--" pour désactiver
+                                 '--pPythoImportSOWEE_Leads',
+                                ], # Nom de la procédure SQL à lancer après l'import des données dans la table. Préfixez avec "--" pour désactiver
+            'useBCP'        :   True,
+            'firstDataRow'  :   2,
+            'bcpEncoding'   :   'utf-16le',
+            'bcpSeparator'  :   '¤',
             'status'        :   1
 }
 # Informations sur l'envoi des rapports d'intégration par mail, mettre status = 0 pour igoner ce bloc si inutie
 MailItems = {
-            'smtp_server'   :   'smtp.server.com',              # Servur SMTP
-            'port'          :   465,                            # Port SMTP
+            'smtp_server'   :   getenv('HFE_SERVER'),           # Servur SMTP
+            'port'          :   int(getenv('HFE_PORT')),        # Port SMTP
             'useTLS'        :   True,                           # TLS True or False
-            'sender_email'  :   'email@gmail.com',              # Emetteur
-            'receiver_email':   ['email@gmail.com'],            # Destinataire du mail
-            'login_email'   :   'email@gmail.com',              # Login SMTP
-            'password'      :   '*************',                # Mot de Passe SMTP
+            'sender_email'  :   getenv('HFE_SENDER'),           # Emetteur
+            'receiver_email':   [getenv('HFE_RECEIVER')],       # Destinataire du mail
+            'login_email'   :   getenv('HFE_USER'),             # Login SMTP
+            'password'      :   getenv('HFE_PASSWORD'),         # Mot de Passe SMTP
             'level'         :   'action', 	                    #info/action/error      # info : mails envoyés après chaque exécution, action : mail envoyé s'il y a eu une action d'import export, erreur : mails envoyés en cas d'erreur (l'objet sera modifié en si présence d'erreur)
             'status'        :   1
 }
