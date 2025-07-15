@@ -1,9 +1,9 @@
 """
 =============================================================================
-Project Name        : PythoImport Version 5.3
+Project Name        : PythoImport Version 6.5
 Created by          : Hedi FEZAI
 Date Creation       : 2022-11-10
-Date Modification   : 2024-02-14
+Date Modification   : 2025-04-15
 -----------------------------------------------------------------------------
 Changelog :
 
@@ -68,7 +68,29 @@ v5.3 (2024-02-24)
     v Add support for recursive file list in sftp based on list of remote paths
     v Apply retention to [LogItems['logFolder'], TsfItems['archiveFolder'], TsfItems['errorFolder'], TsfItems['localFolder']]
     v Bug fix mail subject not switching to ERR in some error cases
-
+v5.4 (2024-03-08)
+    v Add missing columns automatically to destination SQL table
+    v Changed mail subject to Warning when this is the case
+v5.5 (2024-04-01)
+    v Corrected bug from v5.3 related to folder retention variable not set correctly
+    v Corrected bug relative to localfolder not liking being a list
+    v Corrected bug in truncate table when table has spaces in it's name
+v6.0 (2024-04-16)
+    v Add option for using BCP command in order to transfer Data to SQL table faster using BulkInsert
+    v Various optimizations relatied to using BCP if some columns are not present in one side or the other
+v6.1 (2024-04-27)
+    v Bug fix when trying to truncate or drop inexistant table
+v6.2 (2024-10-01)
+    v Bug fix with mask sent to SP not changing when having multiple imports in the same job
+    v Add .lower() to all control variables coming from settings
+    v Add support for custom encoding and separator for BCP file
+v6.3 (2024-11-09)
+    v Correct Bug when BCP runs into an error and file is moved to Processed Folder instead of InError Folder
+    v Removing print spResult when procedure returns 0
+v6.4 (2025-04-15)
+    v Add support for FTP servers (Port 21)
+v6.5 (2025-05-07)
+    v Exclude folders from automatic retention
 WishList
 	ToDo :
 	?   Add Support for TarBalls (tar, tar.gz, tgz)
@@ -77,11 +99,14 @@ WishList
 	?   Add Export to SFTP
 	?   Add Export to MAIL
 """
+import warnings
+warnings.simplefilter("ignore", category=UserWarning)
 from os import path, rename, makedirs, listdir, remove, environ, getenv
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText as text
 from email.mime.multipart import MIMEMultipart
 from cryptography.fernet import Fernet
+from unidecode import unidecode
 import smtplib, ssl
 import sqlalchemy as sa
 import pyodbc
@@ -93,8 +118,9 @@ import pysftp
 import fnmatch
 import zipfile
 import owncloud
-import warnings
-warnings.simplefilter("ignore", category=UserWarning)
+import subprocess
+import csv
+import ftplib
 from settings import *
 
 def initLogFile():
@@ -125,7 +151,8 @@ def initLogFile():
     for folder in [LogItems['logFolder'], TsfItems['archiveFolder'], TsfItems['errorFolder'], TsfItems['localFolder']]:
         listFiles = [filename for filename in listdir(folder) if int(datetime.fromtimestamp(path.getctime(folder + '/' +filename)).date().strftime('%Y%m%d')) < int((datetime.now().date() - timedelta(days = retentionDays)).strftime('%Y%m%d'))]
         for filename in listFiles:
-            remove(LogItems['logFolder'] + '/' + filename)
+            if path.isfile(filename):
+                remove(folder + '/' + filename)
     if path.exists(log_file):
         if datetime.now().strftime('%Y%m%d') != datetime.fromtimestamp(path.getctime(log_file)).strftime('%Y%m%d') or path.getsize(log_file)/1024 > log_sizeKB:
             old_log_file = LogItems['logFolder'] + '/' + LogItems['filePrefix'] + '_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.txt'
@@ -150,14 +177,15 @@ def sendMail (hasError = False, useTLS = False):
     if MailItems['status'] == 0:
         sendMail = False
     else:
-        if MailItems['level'] == 'info':
+        if MailItems['level'].lower() == 'info':
             sendMail = True
-        elif MailItems['level'] == 'error' and hasError == True:
+        elif MailItems['level'].lower() == 'error' and hasError == True:
             sendMail = True
-        elif MailItems['level'] == 'action' and (hasAction == True or hasError == True):
+        elif MailItems['level'].lower() == 'action' and (hasAction == True or hasError == True):
             sendMail = True
         else:
             sendMail = False
+    prefix_subject = ""
     if sendMail == True:
         port = MailItems['port']
         smtp_server = MailItems['smtp_server']
@@ -173,7 +201,11 @@ def sendMail (hasError = False, useTLS = False):
             except Exception as pwd:
                 logToFile (logfile, 1, True, 'Error decrypting SMTP password : ' + str(pwd))
         if hasError == False:
-            prefix_subject = '[INF]'
+            if hasWarn == False:
+                prefix_subject = '[INF]'
+            else:
+                prefix_subject = '[WRN]'
+                m['X-Priority'] = '2'
         else:
             prefix_subject = '[ERR]'
             m['X-Priority'] = '2'
@@ -215,22 +247,22 @@ def sendMail (hasError = False, useTLS = False):
                     server.login(login_email, password)
                     server.sendmail(sender_email, receiver_email, m.as_string())
                     server.quit()
-                    logToFile (logfile, level = 1, isError = False, message = 'Email Notification sent successfully to : ' + ', '.join(receiver_email))
+                    logToFile (logfile, level = 1, isError = False, message = prefix_subject + ' Email Notification sent successfully to : ' + ', '.join(receiver_email))
             else:
                 with smtplib.SMTP_SSL(smtp_server, port) as server:
                     server.ehlo()
                     server.login(login_email, password)
                     server.sendmail(sender_email, receiver_email, m.as_string())
                     server.quit()
-                    logToFile (logfile, level = 1, isError = False, message = 'Email Notification sent successfully to : ' + ', '.join(receiver_email))
+                    logToFile (logfile, level = 1, isError = False, message = prefix_subject + ' Email Notification sent successfully to : ' + ', '.join(receiver_email))
         except Exception as sendErr:
-            logToFile (logfile, level = 1, isError = True, message = 'Failed to send Email Notification : ' + str(sendErr))
-    else:
-        logToFile (logfile, level = 1, isError = False, message = 'Email setting set to "' + MailItems['level'] + '" and there were none. Skipping...')
+            logToFile (logfile, level = 1, isError = True, message = prefix_subject + ' Failed to send Email Notification : ' + str(sendErr))
+    elif MailItems['status'] == 1:
+        logToFile (logfile, level = 1, isError = False, message = prefix_subject + ' Email setting set to "' + MailItems['level'] + '" and there were none. Skipping...')
 
 def getAllFiles(sftp, listRemotePath):
-    if  isinstance(listRemotePath,list) == False:
-         listRemotePath = [listRemotePath]
+    if isinstance(listRemotePath,list) == False:
+        listRemotePath = [listRemotePath]
     for remotePath in listRemotePath:
         for item in sftp.listdir_attr(remotePath):
             itemPath = remotePath.rstrip("/") + "/" + item.filename
@@ -238,7 +270,7 @@ def getAllFiles(sftp, listRemotePath):
                 if itemPath not in listFiles:
                     listFiles.append(itemPath)
             elif sftp.isdir(itemPath) and TsfItems.get('recursiveMode') == True:
-                 getAllFiles(sftp, itemPath)
+                getAllFiles(sftp, itemPath)
     return listFiles
 
 class DatabaseEngine:
@@ -267,6 +299,7 @@ if __name__ == '__main__':
     logfile = initLogFile()
     log_list=[] # Pour le mail en HTML
     hasError = False
+    hasWarn = False
     logToFile(logfile, level = 1, isError = False, message = f"{' BEGIN CYCLE '.center(150, '#')}")
 
     # Start Work Here
@@ -304,9 +337,10 @@ if __name__ == '__main__':
         SqlItems['spExec']=[SqlItems['spExec']]
 
 
-    if (len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExec'])) or (len(TsfItems['fileMask']) == len(SqlItems['spExec']) and SqlItems['sqlTableMode'] == 'auto') :
+    if (len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExec'])) or (len(TsfItems['fileMask']) == len(SqlItems['spExec']) and SqlItems['sqlTableMode'].lower() == 'auto') :
         #Gestion des Masques des Fichiers à Télécharger
         listComputedMask=[]
+        preFix = datetime.now().strftime("%Y%m%d_%H%M%S") + '_' if TsfItems.get('addTimeStamp') == True else ''
         lookupDay = datetime.today() + timedelta(days = TsfItems['lookUpDay'])
         computedZipMask = TsfItems['zipMask']
         lookupDay = datetime.today() + timedelta(days = TsfItems['lookUpDay'])
@@ -329,12 +363,13 @@ if __name__ == '__main__':
             computedMask = computedMask.replace('§mm§',lookupDay.strftime("%M"))
             computedMask = computedMask.replace('§ss§',lookupDay.strftime("%S"))
             listComputedMask.append(computedMask)
-        if sftpStatus == 'Enabled' or sftpStatus == 1 or sftpStatus == '1':
+        if sftpStatus == 'enabled' or sftpStatus == 1 or sftpStatus == '1':
             # Bloc SFTP
             try:
                 sftp = None
-                cnopts = pysftp.CnOpts()
-                cnopts.hostkeys = None
+                if sftpItems['port'] == 22:
+                    cnopts = pysftp.CnOpts()
+                    cnopts.hostkeys = None
                 try:
                     sftpItems['password'] = Fernet(getenv('FERNET_KEY')).decrypt(sftpItems['password']).decode()
                 except:
@@ -346,7 +381,14 @@ if __name__ == '__main__':
                 logToFile(logfile, level = 1, isError = False, message = "BEGIN transfert")
                 if sftp:
                     sftp.close
-                sftp = pysftp.Connection(**sftpItems, cnopts = cnopts)
+                if sftpItems['port'] == 22:
+                    sftp = pysftp.Connection(**sftpItems, cnopts = cnopts)
+                else:
+                    sftp = ftplib.FTP_TLS(timeout=10)
+                    sftp.connect(sftpItems['host'], sftpItems['port'])
+                    sftp.auth()
+                    sftp.prot_p()
+                    sftp.login(sftpItems['username'], sftpItems['password'])
                 logToFile(logfile, level = 2, isError = False, message = 'Connected to : ' + sftpItems['host'] +' with Username : ' + sftpItems['username'])
             except Exception as cnx:
                 logToFile(logfile, level = 2, isError = True, message =  str(cnx) + ' Server : ' + sftpItems['host'] +'. Username : ' + sftpItems['username'])
@@ -354,81 +396,97 @@ if __name__ == '__main__':
             else:
                 try:
                     logToFile(logfile, level = 2, isError = False, message = 'Accessing remote folders : ' + str(TsfItems['remoteFolder']))
-                    with sftp.cd('/'):
-                        listFiles = []
-                        cleanlist = []
-                        listZip = []
+                    listFiles = []
+                    cleanlist = []
+                    listZip = []
+                    if sftpItems['port'] == 22:
+                        sftp.cd('/')
                         listFiles=getAllFiles(sftp, TsfItems['remoteFolder'])
-                        for index in range (len(listComputedMask)):
-                            cleanlist += [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
-                        if TsfItems['lookForZip']:
-                            listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
-                        logToFile(logfile, level = 2, isError = False, message = 'Total Files and Folders Found : ' + str(len(listFiles)))
-                        logToFile(logfile, level = 1, isError = False, message = '->\t' +'Total Matching Files Found : ' + str(len(cleanlist) + len (listZip)))
-                        if TsfItems['lookForZip']:
-                            listZip = []
-                            listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
-                            logToFile(logfile, level = 2, isError = False, message = 'ZipFile mask : ' + computedZipMask + '\t' + 'Files Found : ' + str(len(listZip)))
-                            #Zip
-                            for file in listZip:
-                                cleanlistZip = []
-                                try:
-                                    zipName = datetime.now().strftime("%Y%m%d_%H%M%S") + '_' + file
-                                    preFix = datetime.now().strftime("%Y%m%d_%H%M%S") + '_'
-                                    logToFile(logfile, level = 2, isError = False, message = 'Downloading ' + file + ' as '+ zipName)
-                                    zipFile = path.join(TsfItems['localFolder'], zipName).replace("\\","/")
+                    else:
+                        sftp.cwd(TsfItems['remoteFolder'][0])
+                        listFiles=sftp.nlst()
+                    for index in range (len(listComputedMask)):
+                        cleanlist += [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
+                    if TsfItems['lookForZip']:
+                        listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
+                    logToFile(logfile, level = 2, isError = False, message = 'Total Files and Folders Found : ' + str(len(listFiles)))
+                    logToFile(logfile, level = 2, isError = False, message = '-> Total Matching Files Found : ' + str(len(cleanlist) + len (listZip)))
+                    if TsfItems['lookForZip']:
+                        listZip = []
+                        listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
+                        logToFile(logfile, level = 2, isError = False, message = 'ZipFile mask : ' + computedZipMask + '\t' + 'Files Found : ' + str(len(listZip)))
+                        #Zip
+                        for file in listZip:
+                            cleanlistZip = []
+                            try:
+                                zipName = preFix + file.replace(':','')
+                                logToFile(logfile, level = 2, isError = False, message = 'Downloading ' + file + ' as '+ zipName)
+                                zipFile = path.join(TsfItems['localFolder'], zipName).replace("\\","/")
+                                if sftpItems['port'] == 22:
                                     sftp.get (file, zipFile)
-                                    #Decompress Zip
-                                    logToFile(logfile, level = 2, isError = False, message =  'Decompressing ' + file)
-                                    with zipfile.ZipFile(zipFile, 'r') as myzip:
-                                        listZip=myzip.infolist()
-                                        for zipIndex in range(len(listComputedMask)):
-                                            cleanlistZip += [zip_info for zip_info in listZip if (fnmatch.fnmatch(zip_info.filename, listComputedMask[zipIndex]) and zip_info.filename[-1] != '/')]
-                                            logToFile(logfile, level = 2, isError = False, message = 'Current mask : ' + listComputedMask[zipIndex] + '\t' + 'Cumulative Files Found : ' + str(len(cleanlistZip)))
-                                        for fileZipped in cleanlistZip:
-                                            try:
-                                                fileZipped.filename = path.basename(fileZipped.filename)
-                                                myzip.extract(fileZipped,TsfItems['localFolder'])
-                                                newFileZipped = preFix + fileZipped.filename
-                                                shutil.move(path.join(TsfItems['localFolder'],fileZipped.filename).replace("\\","/"), path.join(TsfItems['localFolder'],newFileZipped).replace("\\","/"))
-                                                logToFile(logfile, level = 3, isError = False, message = 'File extracted : ' + fileZipped.filename + ' as :' + newFileZipped)
-                                            except Exception as extr:
-                                                logToFile(logfile, level = 3, isError = True, message = 'Unable to extract ' + fileZipped.filename + ' from zip : ' + str(extr))
-                                                hasError = True
-                                    try:
-                                        shutil.move(zipFile,TsfItems['archiveFolder'])
-                                    except Exception as mvz:
-                                        logToFile(logfile, level = 2, isError = True, message = 'Unable to move ' + zipFile + ' to archive : ' + str(mvz))
-                                        hasError = True
-                                    if TsfItems['deleteAfter'] == True:
+                                else:
+                                    sftp.retrbinary('RETR %s' % file, open(zipFile, 'wb').write)
+                                #Decompress Zip
+                                logToFile(logfile, level = 2, isError = False, message =  'Decompressing ' + file)
+                                with zipfile.ZipFile(zipFile, 'r') as myzip:
+                                    listZip=myzip.infolist()
+                                    for zipIndex in range(len(listComputedMask)):
+                                        cleanlistZip += [zip_info for zip_info in listZip if (fnmatch.fnmatch(zip_info.filename, listComputedMask[zipIndex]) and zip_info.filename[-1] != '/')]
+                                        logToFile(logfile, level = 2, isError = False, message = 'Current mask : ' + listComputedMask[zipIndex] + '\t' + 'Cumulative Files Found : ' + str(len(cleanlistZip)))
+                                    for fileZipped in cleanlistZip:
                                         try:
-                                            sftp.remove (file)
-                                        except Exception as rmv:
-                                            logToFile(logfile, level = 2, isError = True, message = 'Unable to delete file from SFTP : ' + str(rmv))
+                                            fileZipped.filename = path.basename(fileZipped.filename)
+                                            myzip.extract(fileZipped,TsfItems['localFolder'])
+                                            newFileZipped = preFix + fileZipped.filename
+                                            shutil.move(path.join(TsfItems['localFolder'],fileZipped.filename).replace("\\","/"), path.join(TsfItems['localFolder'],newFileZipped).replace("\\","/"))
+                                            logToFile(logfile, level = 3, isError = False, message = 'File extracted : ' + fileZipped.filename + ' as :' + newFileZipped)
+                                        except Exception as extr:
+                                            logToFile(logfile, level = 3, isError = True, message = 'Unable to extract ' + fileZipped.filename + ' from zip : ' + str(extr))
                                             hasError = True
-                                except Exception as dwnld:
-                                    logToFile(logfile, level = 2, isError = True, message = 'An ERROR occured during Download : ' + str(dwnld))
-                                    hasError = True
-                        for index in range (len(listComputedMask)):
-                            cleanlist = []
-                            hasError = False
-                            cleanlist = [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
-                            logToFile(logfile, level = 2, isError = False, message = 'Current mask : ' + listComputedMask[index] + '\t' + 'Files Found : ' + str(len(cleanlist)))
-                            for file in cleanlist:
                                 try:
-                                    hasAction = True
-                                    fileName = datetime.now().strftime("%Y%m%d_%H%M%S") + '_' + path.basename(file)
-                                    logToFile(logfile, level = 2, isError = False, message = 'Downloading ' + file + ' as '+ fileName)
-                                    sftp.get(file, TsfItems['localFolder'] + '/' + fileName)
-                                    if TsfItems['deleteAfter'] == True:
-                                        try:
-                                            sftp.remove (file)
-                                        except Exception as rmv:
-                                            logToFile(logfile, level = 2, isError = True, message = 'Unable to delete file from SFTP : ' + str(rmv))
-                                            hasError = True
-                                except Exception as dwnld:
-                                    logToFile(logfile, level = 2, isError = True, message = 'An ERROR occured during Download : ' + str(dwnld))
+                                    shutil.move(zipFile,TsfItems['archiveFolder'])
+                                except Exception as mvz:
+                                    logToFile(logfile, level = 2, isError = True, message = 'Unable to move ' + zipFile + ' to archive : ' + str(mvz))
                                     hasError = True
+                                if TsfItems['deleteAfter'] == True:
+                                    try:
+                                        if sftpItems['port'] == 22:
+                                            sftp.remove (file)
+                                        else:
+                                            sftp.delete(file)
+                                    except Exception as rmv:
+                                        logToFile(logfile, level = 2, isError = True, message = 'Unable to delete file from SFTP : ' + str(rmv))
+                                        hasError = True
+                            except Exception as dwnld:
+                                logToFile(logfile, level = 2, isError = True, message = 'An ERROR occured during Download : ' + str(dwnld))
+                                hasError = True
+                    for index in range (len(listComputedMask)):
+                        cleanlist = []
+                        hasError = False
+                        cleanlist = [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
+                        logToFile(logfile, level = 2, isError = False, message = 'Current mask : ' + listComputedMask[index] + '\t' + 'Files Found : ' + str(len(cleanlist)))
+                        for file in cleanlist:
+                            try:
+                                hasAction = True
+                                fileName = preFix + path.basename(file.replace(':',''))
+                                logToFile(logfile, level = 2, isError = False, message = 'Downloading ' + file + ' as '+ fileName)
+                                if sftpItems['port'] == 22:
+                                    sftp.get(file, TsfItems['localFolder'] + '/' + fileName)
+                                else:
+                                    with open(TsfItems['localFolder'] + '/' + fileName, 'wb') as f:
+                                        sftp.retrbinary('RETR %s' % file, f.write)
+                                if TsfItems['deleteAfter'] == True:
+                                    try:
+                                        if sftpItems['port'] == 22:
+                                            sftp.remove (file)
+                                        else:
+                                            sftp.delete(file)
+                                    except Exception as rmv:
+                                        logToFile(logfile, level = 2, isError = True, message = 'Unable to delete file from SFTP : ' + str(rmv))
+                                        hasError = True
+                            except Exception as dwnld:
+                                logToFile(logfile, level = 2, isError = True, message = 'An ERROR occured during Download : ' + str(dwnld))
+                                hasError = True
                 except Exception as rep:
                     logToFile(logfile, level = 2, isError = True, message = 'An ERROR occured during access to Path : ' + str(rep))
                     hasError = True
@@ -436,7 +494,7 @@ if __name__ == '__main__':
                 if sftp:
                     sftp.close
                     sftp = None
-        elif owncldItems['status'] == 'Enabled' or owncldItems['status']  == 1 or owncldItems['status']  == '1':
+        elif owncldItems['status'] == 'enabled' or owncldItems['status']  == 1 or owncldItems['status']  == '1':
             # Bloc de transfert OwnCloud
             try:
                 try:
@@ -473,8 +531,7 @@ if __name__ == '__main__':
                             for file in listZip:
                                 cleanlistZip = []
                                 try:
-                                    zipName = datetime.now().strftime("%Y%m%d_%H%M%S") + '_' + file
-                                    preFix = datetime.now().strftime("%Y%m%d_%H%M%S") + '_'
+                                    zipName = preFix + file
                                     logToFile(logfile, level = 2, isError = False, message = 'Downloading ' + file + ' as '+ zipName)
                                     zipFile = path.join(TsfItems['localFolder'],zipName).replace("\\","/")
                                     oc.get_file (path.join(TsfItems['remoteFolder'],file).replace("\\","/"), zipFile)
@@ -517,7 +574,7 @@ if __name__ == '__main__':
                             for file in cleanlist:
                                 try:
                                     hasAction = True
-                                    fileName = datetime.now().strftime("%Y%m%d_%H%M%S") + '_' + file
+                                    fileName = preFix + file
                                     logToFile(logfile, level = 2, isError = False, message = 'Downloading ' + file + ' as '+ fileName)
                                     oc.get_file(path.join(TsfItems['remoteFolder'],file).replace("\\","/"), path.join(TsfItems['localFolder'],fileName).replace("\\","/"))
                                     if TsfItems['deleteAfter'] == True:
@@ -533,103 +590,103 @@ if __name__ == '__main__':
                     logToFile(logfile, level = 2, isError = True, message = 'An ERROR occured during access to Path : ' + str(rep))
                     hasError = True
                 logToFile(logfile, level = 1, isError = False, message = 'END Transfert')
-        elif apiItems['status'] == 'Enabled' or apiItems['status']  == 1 or apiItems['status']  == '1':
+        elif apiItems['status']== 'enabled' or apiItems['status']  == 1 or apiItems['status']  == '1':
             pass
         else:
             # Bloc tranfert depuis local ou filer réseau+
-            if (path.isdir(TsfItems['remoteFolder'])):
-                logToFile(logfile, level = 1, isError = False, message = 'BEGIN transfert')
-                logToFile(logfile, level = 2, isError = False, message = 'Accessing remote folder : ' + TsfItems['remoteFolder'])
-                listFiles = []
-                cleanlist = []
-                listZip = []
-                listFiles = listdir(TsfItems['remoteFolder'])
-                for index in range (len(listComputedMask)):
-                    cleanlist += [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
-                if TsfItems['lookForZip']:
-                    listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
-                logToFile(logfile, level = 2, isError = False, message = 'Total Files and Folders Found : ' + str(len(listFiles)))
-                logToFile(logfile, level = 1, isError = False, message = '->\t' +'Total Matching Files Found : ' + str(len(cleanlist) + len (listZip)))
-                if TsfItems['lookForZip']:
-                    listZip = []
-                    listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
-                    logToFile(logfile, level = 2, isError = False, message = 'ZipFile mask : ' + computedZipMask + '\t' + 'Files Found : ' + str(len(listZip)))
-                    #Zip
-                    for file in listZip:
-                        cleanlistZip = []
-                        try:
-                            zipName = datetime.now().strftime("%Y%m%d_%H%M%S") + '_' + file
-                            preFix = datetime.now().strftime("%Y%m%d_%H%M%S") + '_'
-                            logToFile(logfile, level = 2, isError = False, message = 'Downloading ' + file + ' as '+ zipName)
-                            zipFile = path.join(TsfItems['localFolder'],zipName).replace("\\","/")
-                            if TsfItems['deleteAfter'] == True:
-                                try:
-                                    shutil.move (path.join(TsfItems['remoteFolder'],file).replace("\\","/"), path.join(TsfItems['localFolder'],zipName).replace("\\","/"))
-                                except Exception as mv:
-                                    logToFile(logfile, level = 2, isError = True, message = 'Unable to delete file from remote folder : ' + str(mv))
-                                    hasError = True
-                            else:
-                                try:
-                                    shutil.copyfile(path.join(TsfItems['remoteFolder'],file).replace("\\","/"), path.join(TsfItems['localFolder'],zipName).replace("\\","/"))
-                                except Exception as cp:
-                                    logToFile(logfile, level = 2, isError = True, message = 'Unable to copy file from remote folder : ' + str(cp))
-                                    hasError = True
-                            #Decompress Zip
-                            logToFile(logfile, level = 2, isError = False, message = 'Decompressing ' + file)
-                            with zipfile.ZipFile(zipFile, 'r') as myzip:
-                                listZip=myzip.infolist()
-                                for zipIndex in range(len(listComputedMask)):
-                                    cleanlistZip += [zip_info for zip_info in listZip if (fnmatch.fnmatch(zip_info.filename, listComputedMask[zipIndex]) and zip_info.filename[-1] != '/')]
-                                    logToFile(logfile, level = 2, isError = False, message = 'Current mask : ' + listComputedMask[zipIndex] + '\t' + 'Cumulative Files Found : ' + str(len(cleanlistZip)))
-                                for fileZipped in cleanlistZip:
-                                    try:
-                                        fileZipped.filename = path.basename(fileZipped.filename)
-                                        myzip.extract(fileZipped,TsfItems['localFolder'])
-                                        newFileZipped = preFix + fileZipped.filename
-                                        shutil.move(path.join(TsfItems['localFolder'],fileZipped.filename).replace("\\","/"), path.join(TsfItems['localFolder'],newFileZipped).replace("\\","/"))
-                                        logToFile(logfile, level = 3, isError = False, message = 'File extracted : ' + fileZipped.filename + ' as :' + newFileZipped)
-                                    except Exception as extr:
-                                        logToFile(logfile, level = 3, isError = True, message = 'Unable to extract ' + fileZipped.filename + ' from zip : ' + str(extr))
-                                        hasError = True
-                            try:
-                                shutil.move(zipFile,TsfItems['archiveFolder'])
-                            except Exception as mvz:
-                                logToFile(logfile, level = 2, isError = True, message = 'Unable to move ' + zipFile + ' to archive : ' + str(mvz))
-                                hasError = True
-                        except Exception as dwnld:
-                            logToFile(logfile, level = 2, isError = True, message = 'An ERROR occured during Download : ' + str(dwnld))
-                            hasError = True
-                for index in range (len(listComputedMask)):
+            for actualFolder in TsfItems['remoteFolder']:
+                if (path.isdir(actualFolder)):
+                    logToFile(logfile, level = 1, isError = False, message = 'BEGIN transfert')
+                    logToFile(logfile, level = 2, isError = False, message = 'Accessing remote folder : ' + actualFolder)
+                    listFiles = []
                     cleanlist = []
-                    hasError = False
-                    cleanlist = [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
-                    logToFile(logfile, level = 2, isError = False, message = 'Current mask : ' + listComputedMask[index] + '\t' + 'Files Found : ' + str(len(cleanlist)))
-                    for file in cleanlist:
-                        try:
-                            hasAction = True
-                            fileName = datetime.now().strftime("%Y%m%d_%H%M%S") + '_' + file
-                            logToFile(logfile, level = 2, isError = False, message = 'Downloading ' + file + ' as '+ fileName)
-                            if TsfItems['deleteAfter'] == True:
+                    listZip = []
+                    listFiles = listdir(actualFolder)
+                    for index in range (len(listComputedMask)):
+                        cleanlist += [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
+                    if TsfItems['lookForZip']:
+                        listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
+                    logToFile(logfile, level = 2, isError = False, message = 'Total Files and Folders Found : ' + str(len(listFiles)))
+                    logToFile(logfile, level = 1, isError = False, message = '->\t' +'Total Matching Files Found : ' + str(len(cleanlist) + len (listZip)))
+                    if TsfItems['lookForZip']:
+                        listZip = []
+                        listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
+                        logToFile(logfile, level = 2, isError = False, message = 'ZipFile mask : ' + computedZipMask + '\t' + 'Files Found : ' + str(len(listZip)))
+                        #Zip
+                        for file in listZip:
+                            cleanlistZip = []
+                            try:
+                                zipName = preFix + file
+                                logToFile(logfile, level = 2, isError = False, message = 'Downloading ' + file + ' as '+ zipName)
+                                zipFile = path.join(TsfItems['localFolder'],zipName).replace("\\","/")
+                                if TsfItems['deleteAfter'] == True:
+                                    try:
+                                        shutil.move (path.join(actualFolder,file).replace("\\","/"), path.join(TsfItems['localFolder'],zipName).replace("\\","/"))
+                                    except Exception as mv:
+                                        logToFile(logfile, level = 2, isError = True, message = 'Unable to delete file from remote folder : ' + str(mv))
+                                        hasError = True
+                                else:
+                                    try:
+                                        shutil.copyfile(path.join(actualFolder,file).replace("\\","/"), path.join(TsfItems['localFolder'],zipName).replace("\\","/"))
+                                    except Exception as cp:
+                                        logToFile(logfile, level = 2, isError = True, message = 'Unable to copy file from remote folder : ' + str(cp))
+                                        hasError = True
+                                #Decompress Zip
+                                logToFile(logfile, level = 2, isError = False, message = 'Decompressing ' + file)
+                                with zipfile.ZipFile(zipFile, 'r') as myzip:
+                                    listZip=myzip.infolist()
+                                    for zipIndex in range(len(listComputedMask)):
+                                        cleanlistZip += [zip_info for zip_info in listZip if (fnmatch.fnmatch(zip_info.filename, listComputedMask[zipIndex]) and zip_info.filename[-1] != '/')]
+                                        logToFile(logfile, level = 2, isError = False, message = 'Current mask : ' + listComputedMask[zipIndex] + '\t' + 'Cumulative Files Found : ' + str(len(cleanlistZip)))
+                                    for fileZipped in cleanlistZip:
+                                        try:
+                                            fileZipped.filename = path.basename(fileZipped.filename)
+                                            myzip.extract(fileZipped,TsfItems['localFolder'])
+                                            newFileZipped = preFix + fileZipped.filename
+                                            shutil.move(path.join(TsfItems['localFolder'],fileZipped.filename).replace("\\","/"), path.join(TsfItems['localFolder'],newFileZipped).replace("\\","/"))
+                                            logToFile(logfile, level = 3, isError = False, message = 'File extracted : ' + fileZipped.filename + ' as :' + newFileZipped)
+                                        except Exception as extr:
+                                            logToFile(logfile, level = 3, isError = True, message = 'Unable to extract ' + fileZipped.filename + ' from zip : ' + str(extr))
+                                            hasError = True
                                 try:
-                                    shutil.move (path.join(TsfItems['remoteFolder'],file).replace("\\","/"), path.join(TsfItems['localFolder'],fileName).replace("\\","/"))
-                                except Exception as mv:
-                                    logToFile(logfile, level = 2, isError = True, message = 'Unable to move file from remote folder : ' + str(mv))
+                                    shutil.move(zipFile,TsfItems['archiveFolder'])
+                                except Exception as mvz:
+                                    logToFile(logfile, level = 2, isError = True, message = 'Unable to move ' + zipFile + ' to archive : ' + str(mvz))
                                     hasError = True
-                            else:
-                                try:
-                                    shutil.copyfile(path.join(TsfItems['remoteFolder'],file).replace("\\","/"), path.join(TsfItems['localFolder'],fileName).replace("\\","/"))
-                                except Exception as cp:
-                                    logToFile(logfile, level = 2, isError = True, message = 'Unable to copy file from remote folder : ' + str(cp))
-                                    hasError = True
-                        except Exception as dwnld:
-                            logToFile(logfile, level = 2, isError = True, message = 'An ERROR occured during Download : ' + str(dwnld))
-                            hasError = True
-                logToFile(logfile, level = 1, isError = False, message = 'END Transfert')
-            else:
-                logToFile(logfile, level = 1, isError = True, message = 'Unable to locate remote folder : ' + TsfItems['remoteFolder'])
-                hasError = True
+                            except Exception as dwnld:
+                                logToFile(logfile, level = 2, isError = True, message = 'An ERROR occured during Download : ' + str(dwnld))
+                                hasError = True
+                    for index in range (len(listComputedMask)):
+                        cleanlist = []
+                        hasError = False
+                        cleanlist = [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
+                        logToFile(logfile, level = 2, isError = False, message = 'Current mask : ' + listComputedMask[index] + '\t' + 'Files Found : ' + str(len(cleanlist)))
+                        for file in cleanlist:
+                            try:
+                                hasAction = True
+                                fileName = preFix + file
+                                logToFile(logfile, level = 2, isError = False, message = 'Downloading ' + file + ' as '+ fileName)
+                                if TsfItems['deleteAfter'] == True:
+                                    try:
+                                        shutil.move (path.join(actualFolder,file).replace("\\","/"), path.join(TsfItems['localFolder'],fileName).replace("\\","/"))
+                                    except Exception as mv:
+                                        logToFile(logfile, level = 2, isError = True, message = 'Unable to move file from remote folder : ' + str(mv))
+                                        hasError = True
+                                else:
+                                    try:
+                                        shutil.copyfile(path.join(actualFolder,file).replace("\\","/"), path.join(TsfItems['localFolder'],fileName).replace("\\","/"))
+                                    except Exception as cp:
+                                        logToFile(logfile, level = 2, isError = True, message = 'Unable to copy file from remote folder : ' + str(cp))
+                                        hasError = True
+                            except Exception as dwnld:
+                                logToFile(logfile, level = 2, isError = True, message = 'An ERROR occured during Download : ' + str(dwnld))
+                                hasError = True
+                    logToFile(logfile, level = 1, isError = False, message = 'END Transfert')
+                else:
+                    logToFile(logfile, level = 1, isError = True, message = 'Unable to locate remote folder : ' + actualFolder)
+                    hasError = True
         # Bloc Import
-        if (SqlItems['status'] == 1 or SqlItems['status'] == '1' or SqlItems['status'] == 'Enabled') :
+        if (SqlItems['status'] == 1 or SqlItems['status'] == '1' or SqlItems['status'] == 'enabled') :
             listFiles = []
             cleanlistAll = []
             listFiles = listdir(TsfItems['localFolder'])
@@ -660,12 +717,15 @@ if __name__ == '__main__':
                             try:
                                 file_name, file_extension = path.splitext(file)
                                 if file_extension in ['.csv', '.txt', '.ows']:
+                                    decimal = TsfItems.get('decimal') if TsfItems.get('decimal') else '.'
+                                    if 'dtypes' not in locals() and 'dtypes' not in globals():
+                                        dtypes = 'str'
                                     if TsfItems['useFileColumns'] == True:
                                         with open(filepath, errors='replace',encoding=TsfItems['encoding']) as filehandle:
                                             if TsfItems['quotechar'] == None:
-                                                df = pd.read_csv(filehandle, encoding=TsfItems['encoding'], delimiter=TsfItems['separator'],engine = 'python', dtype = 'str')
+                                                df = pd.read_csv(filehandle, encoding=TsfItems['encoding'], delimiter=TsfItems['separator'],engine = 'python', decimal = decimal, dtype = dtypes)
                                             else:
-                                                df = pd.read_csv(filehandle, quotechar=TsfItems['quotechar'], encoding=TsfItems['encoding'], delimiter=TsfItems['separator'],engine = 'python', dtype = 'str')
+                                                df = pd.read_csv(filehandle, quotechar=TsfItems['quotechar'], encoding=TsfItems['encoding'], delimiter=TsfItems['separator'],engine = 'python', decimal = decimal, dtype = dtypes)
                                     else:
                                         if 'skiprows' not in locals() and 'skiprows' not in globals():
                                             skiprows=0
@@ -673,10 +733,9 @@ if __name__ == '__main__':
                                             skipfooter = 0
                                         with open(filepath, errors='replace',encoding=TsfItems['encoding']) as filehandle:
                                             if TsfItems['quotechar'] == None:
-                                                df = pd.read_csv(filehandle, encoding=TsfItems['encoding'], delimiter=TsfItems['separator'], skiprows = skiprows, skipfooter = skipfooter, header = None, names= columnNames.values(), usecols=columnNames.keys(), engine = 'python' , dtype = 'str')
+                                                df = pd.read_csv(filehandle, encoding=TsfItems['encoding'], delimiter=TsfItems['separator'], skiprows = skiprows, skipfooter = skipfooter, header = None, names= columnNames.values(), usecols=columnNames.keys(), engine = 'python' , dtype = dtypes)
                                             else:
-                                                df = pd.read_csv(filehandle, quotechar=TsfItems['quotechar'], encoding=TsfItems['encoding'], delimiter=TsfItems['separator'], skiprows = skiprows, skipfooter = skipfooter, header = None, names= columnNames.values(), usecols=columnNames.keys(), engine = 'python' , dtype = 'str')
-
+                                                df = pd.read_csv(filehandle, quotechar=TsfItems['quotechar'], encoding=TsfItems['encoding'], delimiter=TsfItems['separator'], skiprows = skiprows, skipfooter = skipfooter, header = None, names= columnNames.values(), usecols=columnNames.keys(), engine = 'python' , dtype = dtypes)
                                 elif file_extension in ['.xls', '.xlsx', '.xlsm','.xlsb']:
                                     if 'skiprows' not in locals() and 'skiprows' not in globals():
                                         skiprows = 1
@@ -726,7 +785,8 @@ if __name__ == '__main__':
                                     hasError = True
                                     continue
                                 try:
-                                    if SqlItems['sqlTableMode'] == 'fixed':
+                                    isNew = False
+                                    if SqlItems['sqlTableMode'].lower() == 'fixed':
                                         sqlTable = SqlItems['sqlTable'][index]
                                     else:
                                         startPos = SqlItems['sqlStartPos']
@@ -738,18 +798,32 @@ if __name__ == '__main__':
                                             sqlTable =  tablePrefix + file[startPos:file[startPos:].find('.') + startPos].lower()
                                         sqlTable = sqlTable.replace (' ','_')
                                     importMode = SqlItems['importMode']
-                                    if importMode == 'truncate':
+                                    if importMode.lower() == 'truncate':
                                         importMode = 'append'
-                                        # truncate SQL
+                                        # TRUNCATE SQL
                                         try:
-                                            res=conn.execute ("SELECT name FROM " + SqlItems['sqlDataBase'] + ".sys.tables WHERE name = '" + sqlTable + "'")         # + SqlItems['sqlDataBase']+'.' + SqlItems['sqlSchema']+'.' + sqlTable)
-                                            if len (res.fetchall()) != 0:
-                                                conn.execute ("TRUNCATE TABLE " + SqlItems['sqlDataBase']+'.' + SqlItems['sqlSchema']+'.' + sqlTable)
-                                                conn.commit()
+                                            res=conn.execute ("SELECT name FROM " + SqlItems['sqlDataBase'] + ".sys.tables WHERE name = '" + sqlTable + "'")
+                                            if len (res.fetchall()) != 0: #Check if table exists
+                                                sql = f"TRUNCATE TABLE [{SqlItems['sqlDataBase']}].[{SqlItems['sqlSchema']}].[{sqlTable}]"
+                                                engine.execute(sa.text(sql))
+                                                engine.commit()
                                         except Exception as trnc:
-                                            logToFile(logfile, level = 2, isError = True, message = 'Unable to truncate table : ' + SqlItems['sqlDataBase'] + '.' + SqlItems['sqlSchema'] + '.' +  ' Error :' + str(trnc))
+                                            logToFile(logfile, level = 2, isError = True, message = 'Unable to truncate table : ' + SqlItems['sqlDataBase'] + '.' + SqlItems['sqlSchema']+ '.[' + sqlTable + ']' +  ' Error :' + str(trnc))
+                                            hasError = True
+                                    elif importMode == 'replace':
+                                        importMode = 'append'
+                                        # DROP SQL
+                                        try:
+                                            res=conn.execute ("SELECT name FROM " + SqlItems['sqlDataBase'] + ".sys.tables WHERE name = '" + sqlTable + "'")
+                                            if len (res.fetchall()) != 0: #Check if table exists
+                                                sql = f"DROP TABLE [{SqlItems['sqlDataBase']}].[{SqlItems['sqlSchema']}].[{sqlTable}]"
+                                                engine.execute(sa.text(sql))
+                                                engine.commit()
+                                        except Exception as trnc:
+                                            logToFile(logfile, level = 2, isError = True, message = 'Unable to drop table : ' + SqlItems['sqlDataBase'] + '.' + SqlItems['sqlSchema']+ '.[' + sqlTable + ']' +  ' Error :' + str(trnc))
                                             hasError = True
                                     if hasError == False:
+                                        takeAction = False
                                         outputdict = sqlcol(df)
                                         logToFile(logfile, level = 1, isError = False, message = '-> Mask : ' + listComputedMask[index] + '\tTable : ' +  sqlTable  + '\tSP : ' +  SqlItems['spExec'][index])
                                         if 'dropNACol' in locals() or 'dropNACol' in globals():
@@ -759,14 +833,137 @@ if __name__ == '__main__':
                                                 else:
                                                     logToFile(logfile, level = 2, isError = False, message = 'DropNACol (' + dropNACol + ') not found in file : ' + file + '. Ignoring...' )
                                         try:
-                                            df.to_sql(name = sqlTable ,schema = SqlItems['sqlSchema'], con=engine, if_exists=importMode, index=False, dtype = outputdict)
-                                            logToFile(logfile, level = 2, isError = False, message = file + " ==> " + sqlTable +' (' + str(len(df)) +' rows) with ' + SqlItems['importMode'])
+                                            def cleanStr(inputStr):
+                                                cleanedStr = unidecode(inputStr)
+                                                cleanedStr = cleanedStr.lower()
+                                                cleanedStr = cleanedStr.replace(" ", "").replace("_", "").replace(".", "").replace("#", "").replace("-", "")
+                                                return cleanedStr
+                                            if SqlItems.get('bcpEncoding') == None:
+                                                bcpEncoding = "utf-16le"
+                                            else:
+                                                bcpEncoding = SqlItems.get('bcpEncoding')
+                                            if SqlItems.get('bcpSeparator') == None:
+                                                bcpSeparator = "¤"
+                                            else:
+                                                bcpSeparator = SqlItems.get('bcpSeparator')
+                                            res=conn.execute ("SELECT name FROM " + SqlItems['sqlDataBase'] + ".sys.tables WHERE name = '" + sqlTable + "'")
+                                            if len (res.fetchall()) != 0: #Check if table exists
+                                                listOld = []
+                                                dfSQL = pd.read_sql(f"SELECT TOP 1 * FROM {SqlItems['sqlDataBase']}.{SqlItems['sqlSchema']}.[{sqlTable}]",con=engine)
+                                                listOld = dfSQL.columns.to_list()
+                                                listNew = df.columns.to_list()
+                                                listNewRenamed= []
+                                                for itemNew in listNew:
+                                                    found=0
+                                                    for itemOld in listOld:
+                                                        if cleanStr(itemNew) ==cleanStr(itemOld):
+                                                            listNewRenamed.append(itemOld)
+                                                            found=1
+                                                    if found == 0:
+                                                        listNewRenamed.append(itemNew)
+                                                listNewClean = [item for item in listNewRenamed]
+                                                listOldClean = [item for item in listOld]
+                                                listDelta= [item for item in listNewClean if item not in listOldClean]      #New Columns
+                                                listDelta2 = [item for item in listOldClean if item not in listNewRenamed]  #Missing Columns
+                                                if len(listDelta) > 0:
+                                                    logToFile(logfile, level = 1, isError = False, message = f"!!! Table structure has changed. New Columns : {listDelta}")
+                                                    if SqlItems.get('autoAddColumns') == True:
+                                                        try:
+                                                            logToFile(logfile, level = 1, isError = False, message = f"Adding missing columns automatically.")
+                                                            sql = f"ALTER TABLE [{SqlItems['sqlDataBase']}].[{SqlItems['sqlSchema']}].[{sqlTable}] ADD "
+                                                            for item in listDelta:
+                                                                sql= sql +  f"[{item}] NVARCHAR ({TsfItems['nvarcharLength']}), "
+                                                            sql = sql[:-2]
+                                                            engine.execute(sa.text(sql))
+                                                            engine.commit()
+                                                            hasWarn = True
+                                                            for col in listDelta2:
+                                                                df[col] = pd.Series()
+                                                            df.rename(columns=dict(zip(listNew, listNewRenamed)), inplace=True)
+                                                            takeAction = True
+                                                        except:
+                                                            logToFile(logfile, level = 1, isError = True, message = f"Unable to add missing columns.")
+                                                            hasError = True
+                                                            takeAction = False
+                                                    else:
+                                                        logToFile(logfile, level = 1, isError = False, message = f"AutoAddColumns is set to False")
+                                                        takeAction = False
+                                                        hasWarn = True
+                                                else:
+                                                    takeAction = True
+                                                if takeAction == True:
+                                                    if SqlItems.get('useBCP') == True:
+                                                        listNewBCP = listOld + listDelta
+                                                        for col in listDelta2:
+                                                            df[col] = pd.Series()
+                                                        df.rename(columns=dict(zip(listNew, listNewRenamed)), inplace=True)
+                                                        dfBCP = df[listNewBCP].copy()
+                                                        fileBCP = path.join(TsfItems['localFolder'],"fileBCP.csv").replace("\\","/")
+                                                        dfBCP.to_csv(fileBCP, encoding=bcpEncoding, sep=bcpSeparator, index=False)
+                                                        bcpCommand=f'BCP [{SqlItems["sqlDataBase"]}].[{SqlItems["sqlSchema"]}].[{sqlTable}] IN "{fileBCP}" -S {SqlItems["sqlServer"]},{SqlItems["sqlPort"]} -T -w -t "{bcpSeparator}" -C 65001 -F {SqlItems["firstDataRow"]}'
+                                                        logToFile(logfile, level = 1, isError = False, message = f"Using BCP command : {bcpCommand}")
+                                                        try:
+                                                            res=subprocess.run(bcpCommand, shell=True, check=True, capture_output=True, text=True)
+                                                            logToFile(logfile, level = 1, isError = False, message = f"Command executed successfully : {res.stdout.splitlines()[-1]}")
+                                                            logToFile(logfile, level = 2, isError = False, message = file + " ==> " + sqlTable +' (' + str(len(df)) +' rows) with BCP')
+                                                            remove(fileBCP)
+                                                        except subprocess.CalledProcessError as e:
+                                                            logToFile(logfile, level = 1, isError = True, message = f"Command ran into an error : {str(e)}")
+                                                            try:
+                                                                shutil.move(filepath,errpath)
+                                                                logToFile(logfile, level = 2, isError = False, message = "File : " + file + ' moved to '+ TsfItems['errorFolder'])
+                                                            except Exception as moveToError:
+                                                                logToFile(logfile, level = 2, isError = True, message = "Error moving file to InError : " + file + '. Error Text :' + str(moveToError))
+                                                                hasError = True
+                                                    else:
+                                                        df.to_sql(name = sqlTable ,schema = SqlItems['sqlSchema'], con=engine, if_exists=importMode, index=False, dtype = outputdict)
+                                                        engine.commit()
+                                                        logToFile(logfile, level = 2, isError = False, message = file + " ==> " + sqlTable +' (' + str(len(df)) +' rows) with ' + SqlItems['importMode'])
+                                                else:
+                                                    logToFile(logfile, level = 1, isError = False, message = f"skipping import")
+                                            else: #Table doesn't exist
+                                                if SqlItems.get('useBCP') == True:
+                                                    lineToCopy = df.iloc[1:2]
+                                                    dfCreator = lineToCopy.copy()
+                                                    dfCreator.to_sql(name = sqlTable ,schema = SqlItems['sqlSchema'], con=engine, if_exists=importMode, index=False, dtype = outputdict)
+                                                    sql = f"TRUNCATE TABLE [{SqlItems['sqlDataBase']}].[{SqlItems['sqlSchema']}].[{sqlTable}]"
+                                                    engine.execute(sa.text(sql))
+                                                    engine.commit()
+                                                    logToFile(logfile, level = 1, isError = False, message = f"Table created with one line and emptied")
+                                                    dfBCP = df.copy()
+                                                    fileBCP = path.join(TsfItems['localFolder'],"fileBCP.csv").replace("\\","/")
+                                                    dfBCP.to_csv(fileBCP, encoding=bcpEncoding, sep=bcpSeparator, index=False)
+                                                    bcpCommand=f'BCP [{SqlItems["sqlDataBase"]}].[{SqlItems["sqlSchema"]}].[{sqlTable}] IN "{fileBCP}" -S {SqlItems["sqlServer"]},{SqlItems["sqlPort"]} -T -w -t "{bcpSeparator}" -C65001 -F {SqlItems["firstDataRow"]}'
+                                                    logToFile(logfile, level = 1, isError = False, message = f"Using BCP command : {bcpCommand}")
+                                                    try:
+                                                        res=subprocess.run(bcpCommand, shell=True, check=True, capture_output=True, text=True)
+                                                        logToFile(logfile, level = 1, isError = False, message = f"Command executed successfully : {res.stdout.splitlines()[-1]}")
+                                                        logToFile(logfile, level = 2, isError = False, message = file + " ==> " + sqlTable +' (' + str(len(df)) +' rows) with BCP')
+                                                        remove(fileBCP)
+                                                    except subprocess.CalledProcessError as e:
+                                                        logToFile(logfile, level = 1, isError = True, message = f"Command ran into an error : {str(e)}")
+                                                        try:
+                                                            shutil.move(filepath,errpath)
+                                                            logToFile(logfile, level = 2, isError = False, message = "File : " + file + ' moved to '+ TsfItems['errorFolder'])
+                                                        except Exception as moveToError:
+                                                            logToFile(logfile, level = 2, isError = True, message = "Error moving file to InError : " + file + '. Error Text :' + str(moveToError))
+                                                            hasError = True
+                                                else:
+                                                    df.to_sql(name = sqlTable ,schema = SqlItems['sqlSchema'], con=engine, if_exists=importMode, index=False, dtype = outputdict)
+                                                    engine.commit()
+                                                    logToFile(logfile, level = 2, isError = False, message = file + " ==> " + sqlTable +' (' + str(len(df)) +' rows) with ' + SqlItems['importMode'])
                                         except Exception as imp:
                                             logToFile(logfile, level = 2, isError = True, message = "Error importing data to SQL Table. Error Text :" + str(imp))
                                             hasError = True
+                                            try:
+                                                shutil.move(filepath,errpath)
+                                                logToFile(logfile, level = 2, isError = False, message = "File : " + file + ' moved to '+ TsfItems['errorFolder'])
+                                            except Exception as moveToError:
+                                                logToFile(logfile, level = 2, isError = True, message = "Error moving file to InError : " + file + '. Error Text :' + str(moveToError))
+                                                hasError = True
                                         else:
                                         #Exec SP
-                                            if SqlItems['spExec'][index] != '' and SqlItems['spExec'][index][:2] != '--':
+                                            if SqlItems['spExec'][index] != '' and SqlItems['spExec'][index][:2] != '--' and hasError == False:
                                                 logToFile(logfile, level = 2, isError = False, message = "Executing Stored Procedure : " + SqlItems['spExec'][index])
                                                 try:
                                                     cursor =conn.cursor()
@@ -775,7 +972,7 @@ if __name__ == '__main__':
                                                         piItems['Client'],
                                                         piItems['Campagne'],
                                                         piItems['Sufixe'],
-                                                        computedMask,
+                                                        listComputedMask[index],
                                                         file,
                                                         SqlItems['sqlDataBase'],
                                                         sqlTable)
@@ -792,7 +989,7 @@ if __name__ == '__main__':
                                                             logToFile(logfile, level = 2, isError = True, message = "Error moving file to InError : " + file + '. Error Text :' + str(moveToError))
                                                             hasError = True
                                                     else:
-                                                        logToFile(logfile, level = 3, isError = False, message = "Return Value = " + str(spResult))
+                                                        #logToFile(logfile, level = 3, isError = False, message = "Return Value = " + str(spResult))
                                                         try:
                                                             shutil.move(filepath,archivepath)
                                                             logToFile(logfile, level = 2, isError = False, message = "File Moved to Archive : " + archivepath)
@@ -858,7 +1055,6 @@ if __name__ == '__main__':
             hasErrorGlobal = hasError
     else:
         logToFile(logfile, level = 1, isError = True, message = '!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Items Number Do Not Match !!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-
     # End Work Here
     if 'useTLS' not in MailItems:
         useTLS = True
