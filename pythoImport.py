@@ -1,6 +1,6 @@
 """
 =============================================================================
-Project Name        : PythoImport Version 6.5
+Project Name        : PythoImport Version 6.6
 Created by          : Hedi FEZAI
 Date Creation       : 2022-11-10
 Date Modification   : 2025-04-15
