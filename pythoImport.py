@@ -108,7 +108,6 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText as text
 from email.mime.multipart import MIMEMultipart
 from cryptography.fernet import Fernet
-from unidecode import unidecode
 import smtplib, ssl
 import sqlalchemy as sa
 import pyodbc
