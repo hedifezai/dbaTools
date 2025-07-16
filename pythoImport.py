@@ -3,7 +3,7 @@
 Project Name        : PythoImport Version 6.6
 Created by          : Hedi FEZAI
 Date Creation       : 2022-11-10
-Date Modification   : 2025-04-15
+Date Modification   : 2025-07-15
 -----------------------------------------------------------------------------
 Changelog :
 
@@ -91,6 +91,8 @@ v6.4 (2025-04-15)
     v Add support for FTP servers (Port 21)
 v6.5 (2025-05-07)
     v Exclude folders from automatic retention
+v6.6 (2025-07-16)
+    v Fixed bug with fnmatch cheking absolute path instead of filename
 WishList
 	ToDo :
 	?   Add Support for TarBalls (tar, tar.gz, tgz)
@@ -117,7 +119,6 @@ import shutil
 import pysftp
 import fnmatch
 import zipfile
-import owncloud
 import subprocess
 import csv
 import ftplib
@@ -406,14 +407,14 @@ if __name__ == '__main__':
                         sftp.cwd(TsfItems['remoteFolder'][0])
                         listFiles=sftp.nlst()
                     for index in range (len(listComputedMask)):
-                        cleanlist += [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
+                        cleanlist += [file for file in listFiles if fnmatch.fnmatch(path.basename(file), listComputedMask[index])]
                     if TsfItems['lookForZip']:
-                        listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
+                        listZip = [file for file in listFiles if fnmatch.fnmatch(path.basename(file), computedZipMask)]
                     logToFile(logfile, level = 2, isError = False, message = 'Total Files and Folders Found : ' + str(len(listFiles)))
                     logToFile(logfile, level = 2, isError = False, message = '-> Total Matching Files Found : ' + str(len(cleanlist) + len (listZip)))
                     if TsfItems['lookForZip']:
                         listZip = []
-                        listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
+                        listZip = [file for file in listFiles if fnmatch.fnmatch(path.basename(file), computedZipMask)]
                         logToFile(logfile, level = 2, isError = False, message = 'ZipFile mask : ' + computedZipMask + '\t' + 'Files Found : ' + str(len(listZip)))
                         #Zip
                         for file in listZip:
@@ -463,7 +464,7 @@ if __name__ == '__main__':
                     for index in range (len(listComputedMask)):
                         cleanlist = []
                         hasError = False
-                        cleanlist = [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
+                        cleanlist = [file for file in listFiles if fnmatch.fnmatch(path.basename(file), listComputedMask[index])]
                         logToFile(logfile, level = 2, isError = False, message = 'Current mask : ' + listComputedMask[index] + '\t' + 'Files Found : ' + str(len(cleanlist)))
                         for file in cleanlist:
                             try:
@@ -518,14 +519,14 @@ if __name__ == '__main__':
                         listZip = []
                         listFiles = oc.list(TsfItems['remoteFolder'], depth = 1)
                         for index in range (len(listComputedMask)):
-                            cleanlist += [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
+                            cleanlist += [file for file in listFiles if fnmatch.fnmatch(path.basename(file), listComputedMask[index])]
                         if TsfItems['lookForZip']:
-                            listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
+                            listZip = [file for file in listFiles if fnmatch.fnmatch(path.basename(file), computedZipMask)]
                         logToFile(logfile, level = 2, isError = False, message = 'Total Files and Folders Found : ' + str(len(listFiles)))
                         logToFile(logfile, level = 1, isError = False, message = '->\t' +'Total Matching Files Found : ' + str(len(cleanlist) + len (listZip)))
                         if TsfItems['lookForZip']:
                             listZip = []
-                            listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
+                            listZip = [file for file in listFiles if fnmatch.fnmatch(path.basename(file), computedZipMask)]
                             logToFile(logfile, level = 2, isError = False, message = 'ZipFile mask : ' + computedZipMask + '\t' + 'Files Found : ' + str(len(listZip)))
                             #Zip
                             for file in listZip:
@@ -569,7 +570,7 @@ if __name__ == '__main__':
                         for index in range (len(listComputedMask)):
                             cleanlist = []
                             hasError = False
-                            cleanlist = [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
+                            cleanlist = [file for file in listFiles if fnmatch.fnmatch(path.basename(file), listComputedMask[index])]
                             logToFile(logfile, level = 2, isError = False, message = 'Current mask : ' + listComputedMask[index] + '\t' + 'Files Found : ' + str(len(cleanlist)))
                             for file in cleanlist:
                                 try:
@@ -603,14 +604,14 @@ if __name__ == '__main__':
                     listZip = []
                     listFiles = listdir(actualFolder)
                     for index in range (len(listComputedMask)):
-                        cleanlist += [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
+                        cleanlist += [file for file in listFiles if fnmatch.fnmatch(path.basename(file), listComputedMask[index])]
                     if TsfItems['lookForZip']:
-                        listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
+                        listZip = [file for file in listFiles if fnmatch.fnmatch(path.basename(file), computedZipMask)]
                     logToFile(logfile, level = 2, isError = False, message = 'Total Files and Folders Found : ' + str(len(listFiles)))
                     logToFile(logfile, level = 1, isError = False, message = '->\t' +'Total Matching Files Found : ' + str(len(cleanlist) + len (listZip)))
                     if TsfItems['lookForZip']:
                         listZip = []
-                        listZip = [file for file in listFiles if fnmatch.fnmatch(file, computedZipMask)]
+                        listZip = [file for file in listFiles if fnmatch.fnmatch(path.basename(file), computedZipMask)]
                         logToFile(logfile, level = 2, isError = False, message = 'ZipFile mask : ' + computedZipMask + '\t' + 'Files Found : ' + str(len(listZip)))
                         #Zip
                         for file in listZip:
@@ -659,7 +660,7 @@ if __name__ == '__main__':
                     for index in range (len(listComputedMask)):
                         cleanlist = []
                         hasError = False
-                        cleanlist = [file for file in listFiles if fnmatch.fnmatch(file, listComputedMask[index])]
+                        cleanlist = [file for file in listFiles if fnmatch.fnmatch(path.basename(file), listComputedMask[index])]
                         logToFile(logfile, level = 2, isError = False, message = 'Current mask : ' + listComputedMask[index] + '\t' + 'Files Found : ' + str(len(cleanlist)))
                         for file in cleanlist:
                             try:
@@ -691,7 +692,7 @@ if __name__ == '__main__':
             cleanlistAll = []
             listFiles = listdir(TsfItems['localFolder'])
             for index in range (len(listComputedMask)):
-                cleanlistAll += [file for file in listFiles if fnmatch.fnmatch(file, '*' + listComputedMask[index])]
+                cleanlistAll += [file for file in listFiles if fnmatch.fnmatch(path.basename(file), '*' + listComputedMask[index])]
             if len(cleanlistAll)!=0:
                 hasAction = True
                 logToFile(logfile, level = 1, isError = False, message = 'BEGIN Import')
@@ -705,7 +706,7 @@ if __name__ == '__main__':
                 else:
                     cleanlist=[]
                     for index in range (len(listComputedMask)):
-                        cleanlist = [file for file in listFiles if fnmatch.fnmatch(file, '*' + listComputedMask[index])]
+                        cleanlist = [file for file in listFiles if fnmatch.fnmatch(path.basename(file), '*' + listComputedMask[index])]
                         for file in cleanlist:
                             df=None
                             if hasErrorGlobal == False:
@@ -834,7 +835,7 @@ if __name__ == '__main__':
                                                     logToFile(logfile, level = 2, isError = False, message = 'DropNACol (' + dropNACol + ') not found in file : ' + file + '. Ignoring...' )
                                         try:
                                             def cleanStr(inputStr):
-                                                cleanedStr = unidecode(inputStr)
+                                                cleanedStr = inputStr
                                                 cleanedStr = cleanedStr.lower()
                                                 cleanedStr = cleanedStr.replace(" ", "").replace("_", "").replace(".", "").replace("#", "").replace("-", "")
                                                 return cleanedStr
