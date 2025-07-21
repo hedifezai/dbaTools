@@ -1,9 +1,9 @@
 """
 =============================================================================
-Project Name        : PythoImport Version 6.6
+Project Name        : PythoImport Version 6.7
 Created by          : Hedi FEZAI
 Date Creation       : 2022-11-10
-Date Modification   : 2025-07-15
+Date Modification   : 2025-07-18
 -----------------------------------------------------------------------------
 Changelog :
 
@@ -91,8 +91,14 @@ v6.4 (2025-04-15)
     v Add support for FTP servers (Port 21)
 v6.5 (2025-05-07)
     v Exclude folders from automatic retention
+    v adding or not timestamp to downloaded filenames is now an option in settings
 v6.6 (2025-07-16)
     v Fixed bug with fnmatch cheking absolute path instead of filename
+    v Fixed bug when retreiving non SQL Server Drivers
+v6.7 (2025-07-18)
+    v Fixed SQL port not set from settings
+v6.8 (2025-07-21)
+    v added fucnction to clean csv file after download (rows splitted over two lines)
 WishList
 	ToDo :
 	?   Add Support for TarBalls (tar, tar.gz, tgz)
@@ -108,6 +114,7 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText as text
 from email.mime.multipart import MIMEMultipart
 from cryptography.fernet import Fernet
+from unidecode import unidecode
 import smtplib, ssl
 import sqlalchemy as sa
 import pyodbc
@@ -118,6 +125,7 @@ import shutil
 import pysftp
 import fnmatch
 import zipfile
+import owncloud
 import subprocess
 import csv
 import ftplib
@@ -273,14 +281,39 @@ def getAllFiles(sftp, listRemotePath):
                 getAllFiles(sftp, itemPath)
     return listFiles
 
+def cleanCsv(pathCsv, encoding= 'utf-8', delimiter=';', quotechar='"'):
+    with open(pathCsv, 'r', encoding=encoding, newline='', errors="ignore") as f:
+        rawLines = f.read().splitlines()
+
+    reader = csv.reader([rawLines[0]], delimiter=delimiter, quotechar=quotechar)
+    expectedFieldCount = len(next(reader))
+
+    cleanedRows = []
+    lineBuffer = ''
+
+    for line in rawLines:
+        lineBuffer += line
+        try:
+            parsed = next(csv.reader([lineBuffer], delimiter=';', quotechar='"'))
+            if len(parsed) == expectedFieldCount:
+                cleanedRows.append(parsed)
+                lineBuffer = ''
+
+        except csv.Error:
+            lineBuffer += '\n'
+
+    with open(pathCsv, 'w', encoding=encoding, newline='\n') as fOut:
+        writer = csv.writer(fOut, delimiter=delimiter, quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        writer.writerows(cleanedRows)
+
 class DatabaseEngine:
     def __init__(self, server, database):
         self.server = server
         self.database = database
     def create_connection(self):
-        drivers = [driver for driver in pyodbc.drivers() if 'ODBC' in driver]
+        drivers = [driver for driver in pyodbc.drivers() if 'ODBC' in driver and 'SQL Server' in driver]
         driverSA = drivers[-1].replace (" ","+")
-        engine = sa.create_engine(f"mssql+pyodbc://{self.server},1320/{self.database}?trusted_connection=yes&driver={driverSA}&encrypt=no", echo = False)
+        engine = sa.create_engine(f"mssql+pyodbc://{self.server},{SqlItems.get('sqlPort')}/{self.database}?trusted_connection=yes&driver={driverSA}&encrypt=no", echo = False)
         connection = engine.connect()
         return connection
 
@@ -289,9 +322,9 @@ class DatabaseConnector:
         self.server = server
         self.database = database
     def create_connection(self):
-        drivers = [driver for driver in pyodbc.drivers() if 'ODBC' in driver]
+        drivers = [driver for driver in pyodbc.drivers() if 'ODBC' in driver and 'SQL Server' in driver]
         driverPO = "{" + drivers[-1] + "}"
-        connection = pyodbc.connect(f"DRIVER={driverPO};SERVER={self.server},1320;initial_catalog={self.database};Trusted_Connection=yes;Encrypt=no;MARS_Connection=Yes;")
+        connection = pyodbc.connect(f"DRIVER={driverPO};SERVER={self.server},{SqlItems.get('sqlPort')};initial_catalog={self.database};Trusted_Connection=yes;Encrypt=no;MARS_Connection=Yes;")
         return connection
 
 
@@ -340,9 +373,11 @@ if __name__ == '__main__':
     if (len(TsfItems['fileMask']) == len(SqlItems['sqlTable']) == len(SqlItems['spExec'])) or (len(TsfItems['fileMask']) == len(SqlItems['spExec']) and SqlItems['sqlTableMode'].lower() == 'auto') :
         #Gestion des Masques des Fichiers à Télécharger
         listComputedMask=[]
+        if TsfItems.get('addTimeStamp') == None:
+            TsfItems['addTimeStamp'] = True
         preFix = datetime.now().strftime("%Y%m%d_%H%M%S") + '_' if TsfItems.get('addTimeStamp') == True else ''
-        lookupDay = datetime.today() + timedelta(days = TsfItems['lookUpDay'])
         computedZipMask = TsfItems['zipMask']
+
         lookupDay = datetime.today() + timedelta(days = TsfItems['lookUpDay'])
         computedZipMask = computedZipMask.replace('§yyyy§',lookupDay.strftime("%Y"))
         computedZipMask = computedZipMask.replace('§yy§',lookupDay.strftime("%y"))
@@ -717,6 +752,7 @@ if __name__ == '__main__':
                             try:
                                 file_name, file_extension = path.splitext(file)
                                 if file_extension in ['.csv', '.txt', '.ows']:
+                                    cleanCsv(filepath, encoding = TsfItems['encoding'], delimiter = TsfItems['separator'], quotechar=TsfItems['quotechar'])
                                     decimal = TsfItems.get('decimal') if TsfItems.get('decimal') else '.'
                                     if 'dtypes' not in locals() and 'dtypes' not in globals():
                                         dtypes = 'str'
@@ -834,7 +870,7 @@ if __name__ == '__main__':
                                                     logToFile(logfile, level = 2, isError = False, message = 'DropNACol (' + dropNACol + ') not found in file : ' + file + '. Ignoring...' )
                                         try:
                                             def cleanStr(inputStr):
-                                                cleanedStr = inputStr
+                                                cleanedStr = unidecode(inputStr)
                                                 cleanedStr = cleanedStr.lower()
                                                 cleanedStr = cleanedStr.replace(" ", "").replace("_", "").replace(".", "").replace("#", "").replace("-", "")
                                                 return cleanedStr
