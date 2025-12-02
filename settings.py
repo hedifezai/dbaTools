@@ -17,6 +17,7 @@ piItems = {
 sftpItems = {
             'host'      :   getenv('SFTP_HOST'),
             'port'      :   int(getenv('SFTP_PORT')),
+            'UseTLS'    :   True, # FTP Over TLS or FTP Insecure
             'username'  :   getenv('SFTP_USER'),
             'password'  :   getenv('SFTP_PASSWORD'),
             'status'    :   1                       # 1 = Enabled  0 = Disabled
@@ -47,20 +48,21 @@ LogFolder  = 'D:/Logs/' + piItems['Provenance'] +'/' + piItems['Client'] + '/' +
 # Tags disponibles pour les masques (File ou Zip): §yyyy§ §MM§ §dd§ §W§ §hh§ §mm§ §ss§
 TsfItems = {
             'remoteFolder'          :   [
-                                         '/DEVDBA/',
+                                        '/DEVDBA/',
                                         ],                # Emplacement Source distant SFTP, OC, Filer ou local
             'fileMask'              :   [
-                                         '*.csv',
+                                        '*.csv',
                                         ],          # Masque pour les fichiers trouvés sur Remote Folder et dans les Zip
+            'lookUpDay'             :   -1,         # Décalage en jours par rapport à aujourd'hui pour le calcul des masque de fichiers
             'useFileColumns'        :   True,               # Si False, il faut renseigner la variable columnNames suivante avec les numéros de colonnes à récupérer et leurs nouveaux noms
-            'lookUpDay'             :   -1,                 # Décalage en jours par rapport à aujourd'hui pour le calcul des masque de fichiers
-            'lookForZip'            :   False,               # Télecharge les Zips qui correspondent au zipMask et vérifie dedans la présence de fichiers avec fileMask
+            'lookForZip'            :   False,              # Télecharge les Zips qui correspondent au zipMask et vérifie dedans la présence de fichiers avec fileMask
             'recursiveMode'         :   False,              # Mode de recherche recursif en SFTP
             'zipMask'               :   '*.zip',            # Masque pour les fichiers zip trouvés sur RemoteFolder
             'encoding'              :   'utf-8',     # File Encoding 'windows-1252', 'utf-8',...
             'separator'             :   ';',                # Field Separator
             'decimal'               :   '.',
             'quotechar'             :   None,               # Délimiteur de champs
+            'cleanCsv'              :   False,               # Lance la fonction cleanCsv pour les lignes splittées
             'forceAlltoNVARCHAR'    :   True,               # Forcer tous les champs à NVARCHAR(255) lors de la création des tables et de l'injection des données (evite les problèmes de conversion)
             'nvarcharLength'        :   4000,                # Taille du champs NVARCHAR
             'localFolder'           :   rootFolder + '/ToProcess',  # Répertoire qui va accueillir les fichiers transférés en attente du traitement
@@ -97,6 +99,11 @@ LogItems = {
 SqlItems = {
             'sqlServer'     :   'FRPARSQLTEST01',   # Nom ou adresse IP du serveur SQL
             'sqlPort'       :   1320,               # Mettre à 0 si on passe par les NamedPipes
+            'authentication':   'windows',          # windows / sql
+            #sql mode
+            'login'         :   getenv('SQL_LOGIN'),
+            'password'      :   getenv('SQL_PASSWORD'),
+            #
             'sqlDataBase'   :   'TEST_HFE',         # Base de données où les fichiers seront importés
             'sqlSchema'     :   'imp',              # Schéma de la table dans la BDD
             'sqlTableMode'  :   'auto',             # fixed / auto -- Fixed : Table créée au préalable/ auto : la table sera créée si elle n'existe pas
@@ -107,11 +114,11 @@ SqlItems = {
             'sqlTablePrefix':   'tTmpHFE_', # Préfixe pour les nom des tables crées par el split des noms de fichiers
             #Fixed
             'sqlTable'      :   [
-                                 'tTmpPythoImportTEST54',
+                                'tTmpPythoImportTEST54',
                                 ],                      # Nom de la table SQL de destination si sqlMode = fixed
             'importMode'    :   'truncate',             # append/truncate/replace
             'spExec'        :   [
-                                 '--pPythoImportSOWEE_Leads',
+                                '--pPythoImportSOWEE_Leads',
                                 ], # Nom de la procédure SQL à lancer après l'import des données dans la table. Préfixez avec "--" pour désactiver
             'useBCP'        :   True,
             'firstDataRow'  :   2,
@@ -131,6 +138,18 @@ MailItems = {
             'level'         :   'action', 	                    #info/action/error      # info : mails envoyés après chaque exécution, action : mail envoyé s'il y a eu une action d'import export, erreur : mails envoyés en cas d'erreur (l'objet sera modifié en si présence d'erreur)
             'status'        :   1
 }
+# fonction à lancer après avoir récupéré le fichier et avant l'import dans la table
+def postTransfert(pathCsv, encoding='utf-8'):
+    #pass
+    lineBuffer = ""  # initialize buffer
+    with open(pathCsv, 'r', encoding=encoding, newline='', errors="ignore") as f:
+        rawLines = f.read().splitlines()
+    for line in rawLines:
+        # ADD FILTERING LOGIC HERE, for example:
+        # if not line.strip(): continue  # skip empty lines
+        lineBuffer += line + "\n"
+    with open(pathCsv, 'w', encoding=encoding, newline='\n') as f:
+        f.write(lineBuffer)
 
 # Bloc Cryptage Mot de Passe
 password = b"PutPasswordHereSaveRunCopyResultThenRemoveIt"
